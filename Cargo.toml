@@ -1,0 +1,25 @@
+[package]
+name = "melior-autodiff"
+version = "0.0.1"
+edition = "2021"
+description = "Reverse-mode automatic differentiation as a Melior pass, with a user-extensible VJP registry."
+license = "Apache-2.0"
+
+[dependencies]
+melior = "0.27.0"
+mlir-sys = "220.0.2"
+
+[build-dependencies]
+bindgen = "0.70"
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "gradient"
+harness = false
+
+[features]
+default = ["melior-backend", "enzyme"]
+melior-backend = []
+enzyme = []
