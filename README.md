@@ -1,69 +1,83 @@
 # melior-autodiff
 
-Reverse-mode automatic differentiation as a pass over [Melior](https://github.com/mlir-rs/melior) IR,
-with a user-extensible VJP registry. **No Enzyme, no C++, no LLVM/MLIR version lockstep** beyond
-whatever Melior itself requires.
+Rust/[Melior](https://github.com/mlir-rs/melior) bindings for [Enzyme](https://github.com/EnzymeAD/Enzyme)'s MLIR C API.
 
-This is the scaffold that came out of the design discussion. It is structured so that the AD logic
-is decoupled from Melior entirely — the driver, registry, activity model, and rules speak only in
-opaque `Val`/`OpId` handles through an emission facade, and **every line that touches Melior lives in
-one file** (`src/backend.rs`).
+Enzyme's MLIR integration exposes automatic differentiation as a dialect pass over MLIR IR. This crate
+wraps the C API via bindgen and provides a thin Rust layer for constructing Enzyme ops, running the
+differentiation pipeline, and calling JIT-compiled gradients with near-zero overhead.
 
-## Why no Enzyme
+## What's here
 
-Enzyme's only extension point for a brand-new primitive op is its C++ autodiff interface. The hard
-requirement here — *users add differentiable ops in Rust, without writing C++* — is unreachable on
-the Enzyme path. Owning the reverse-mode pass in Rust is the only configuration where a Rust-level
-VJP registry is possible. The price is implementing reverse mode for a bounded op set yourself; the
-payoff is a clean dependency surface and a registry your users can extend.
+| | |
+|---|---|
+| **Op construction** | `create_autodiff_op`, `create_fwddiff_op`, `create_jacobian_op` — build `enzyme.autodiff`, `enzyme.fwddiff`, `enzyme.jacobian` ops with typed activity attributes |
+| **Pass registration** | `enzymeRegisterPasses`, `enzymeRegisterDialectExtensions`, `enzymeCreateDifferentiatePass`, `enzymeCreateConvertEnzymeToMemRefPass` |
+| **JIT utilities** | `lookup_jit_fn!` — look up a compiled function by name and return a `Box<dyn Fn(...)>`, transmute isolated to construction |
+| **Benchmarks** | Criterion suite measuring compile latency (~6–9 ms), `invoke_packed` overhead (~750 ns), and raw/boxed call cost (~2 ns) |
 
-## What's real vs. what's a sketch
+## Quick example
 
-| Module | Status |
-| --- | --- |
-| `builder.rs` (facade), `activity.rs`, `cotangent.rs`, `registry.rs`, `reverse.rs` (driver), `rules/`, `testing.rs` | Real, Melior-independent Rust. Compiles and is unit-testable against the symbolic backend. |
-| `backend.rs` (Melior impl) | **Sketch.** Every call is marked; verify against your pinned `melior` version. The highest-drift items are op iteration and generic op introspection. |
+```rust
+// Parse a module with an enzyme.autodiff op, lower it, and call the gradient.
+let ctx = setup_context();
+let mut module = Module::parse(&ctx, MLIR_SOURCE).unwrap();
 
-The four-way dispatch in `reverse.rs` is the heart of the system: **structural → composite →
-primitive → opaque-error**. That logic is complete. What remains is real IR plumbing in the backend.
+let pm = PassManager::new(&ctx);
+pm.add_pass(Pass::from_raw_fn(enzymeCreateDifferentiatePass));
+pm.add_pass(Pass::from_raw_fn(enzymeCreateConvertEnzymeToMemRefPass));
+pm.add_pass(create_inliner());
+pm.add_pass(create_canonicalizer());
+pm.add_pass(create_scf_to_control_flow());
+pm.add_pass(create_to_llvm());
+pm.add_pass(create_reconcile_unrealized_casts());
+pm.run(&mut module).unwrap();
 
-## Prerequisites (for the Melior backend)
+let engine = ExecutionEngine::new(&module, 3, &[], false, false);
+let grad = lookup_jit_fn!(&engine, "dmy_fn", fn(x: f64, seed: f64) -> f64);
+let result = grad(3.0, 1.0); // 6.0 for d/dx x^2
+```
 
-- LLVM/MLIR matching Melior's required major version, installed and discoverable
-  (`brew install llvm@<N>`; point `MLIR_SYS_<NN>_PREFIX` / `TABLEGEN_<NN>_PREFIX` at it).
-- The `melior` version in `Cargo.toml` pinned to your project's.
+## Build
 
-The logic modules build *without* any of this via the symbolic backend — run those tests in CI even
-where LLVM isn't available.
+Requires LLVM/MLIR 22 and the Enzyme submodule built against it.
 
-## Adding a differentiable op
+```sh
+git clone --recurse-submodules https://github.com/agarret7/melior-autodiff
+cd melior-autodiff
 
-Composite (common): build it as a `func.func` from existing differentiable ops. Nothing to register.
+# Build Enzyme against your LLVM 22 install
+cmake -S enzyme/enzyme -B enzyme/build \
+  -DLLVM_DIR=$(llvm-config --cmakedir) \
+  -DCMAKE_BUILD_TYPE=Release
+cmake --build enzyme/build --parallel
 
-New primitive (rare): register one rule. See `register_normal_lpdf` in `src/rules/mod.rs` for a
-worked Normal log-density — three operand cotangents, pure Rust, no dialect authoring.
+# Point mlir-sys at your LLVM prefix
+export MLIR_SYS_220_PREFIX=$(llvm-config --prefix)
 
-## Next steps, in order
+cargo test
+cargo bench
+```
 
-1. Fill in `backend.rs` op iteration + introspection; get `differentiate` running on a
-   straight-line `arith`/`math` function end to end.
-2. Implement the `scf.if` structural rule, then `scf.for` (the loop "tape" — the hardest piece;
-   stash forward intermediates, replay in reverse).
-3. Wire Melior's `ExecutionEngine` so a generated gradient is JIT-callable — this is what closes the
-   loop for the HMC/VI sampler that consumes it.
-4. Build out the `dist.*` primitive rules your PPL needs (log-pdfs, bijector log-dets).
+`ENZYME_BUILD_DIR` overrides the default `enzyme/build` path if needed.
 
-## Layout
+## Benchmarks
 
 ```
-src/
-  lib.rs        public API + Differentiate trait
-  builder.rs    Val/OpId handles + AdBuilder emission facade
-  activity.rs   Const/Active/Duplicated + reachability activity pass
-  cotangent.rs  cotangent accumulation (the chain-rule summation)
-  registry.rs   the user-extensible VJP registry
-  reverse.rs    the reverse-mode driver (four-way dispatch) — pure logic
-  rules/mod.rs  built-in primitive rules + example custom Normal lpdf
-  testing.rs    symbolic backend (no LLVM) for unit-testing rules
-  backend.rs    THE Melior backend — verify against your pinned version
+compile/square          ~5.8 ms   (parse → differentiate → lower → JIT compile)
+compile/poly_x8         ~8.8 ms
+execute/dsquare         ~775 ns   (invoke_packed FFI trampoline)
+execute_raw/dsquare     ~2 ns     (raw fn ptr via engine.lookup)
+execute_boxed/dsquare   ~2 ns     (Box<dyn Fn> via lookup_jit_fn!)
 ```
+
+The ~750 ns `invoke_packed` overhead is the `void(**)(void**)` trampoline. `lookup_jit_fn!` bypasses
+it entirely — use it for any inner loop (e.g. HMC leapfrog steps).
+
+## Enzyme dialect boundary
+
+Only the core `enzyme.*` ops are exposed. The `impulse.*` PPL dialect (HMC/NUTS configs, simulate,
+sample) requires separate dialect registration not yet wired into the C API; those wrappers are parked
+in `src/drafts/` for later.
+
+`enzyme.jacobian` can be constructed but no Enzyme pass lowers it yet — the relevant test is marked
+`#[ignore]` until upstream adds a jacobian lowering pass.
