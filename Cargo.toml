@@ -5,7 +5,7 @@ resolver = "3"
 name = "melior-autodiff"
 version = "0.0.1"
 edition = "2021"
-description = "Reverse-mode automatic differentiation as a Melior pass, with a user-extensible VJP registry."
+description = "Automatic differentiation as a Melior pass"
 license = "Apache-2.0"
 
 [dependencies]

@@ -25,8 +25,8 @@ let mut module = Module::parse(&ctx, MLIR_SOURCE).unwrap();
 let pm = PassManager::new(&ctx);
 pm.add_pass(Pass::from_raw_fn(enzymeCreateDifferentiatePass));
 pm.add_pass(Pass::from_raw_fn(enzymeCreateConvertEnzymeToMemRefPass));
-pm.add_pass(create_inliner());
-pm.add_pass(create_canonicalizer());
+pm.add_pass(create_inliner_pass());
+pm.add_pass(create_canonicalizer_pass());
 pm.add_pass(create_scf_to_control_flow());
 pm.add_pass(create_to_llvm());
 pm.add_pass(create_reconcile_unrealized_casts());
@@ -39,20 +39,20 @@ let result = grad(3.0, 1.0); // 6.0 for d/dx x^2
 
 ## Build
 
-Requires LLVM/MLIR 22 and the Enzyme submodule built against it.
+Requires LLVM/MLIR 23 and the Enzyme submodule built against it.
 
 ```sh
 git clone --recurse-submodules https://github.com/agarret7/melior-autodiff
 cd melior-autodiff
 
-# Build Enzyme against your LLVM 22 install
+# Build Enzyme against your LLVM 23 install
 cmake -S enzyme/enzyme -B enzyme/build \
   -DLLVM_DIR=$(llvm-config --cmakedir) \
   -DCMAKE_BUILD_TYPE=Release
 cmake --build enzyme/build --parallel
 
-# Point mlir-sys at your LLVM prefix
-export MLIR_SYS_220_PREFIX=$(llvm-config --prefix)
+# Point mlir-sys at your LLVM 23 prefix
+export MLIR_SYS_230_PREFIX=$(llvm-config --prefix)
 
 cargo test
 cargo bench
