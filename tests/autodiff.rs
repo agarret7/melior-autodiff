@@ -1,22 +1,71 @@
-use melior::pass::PassManager;
-use melior::{
-    ir::{
-        attribute::{StringAttribute, TypeAttribute},
-        operation::OperationBuilder,
-        Block, BlockLike, Identifier, Location, Module, Region, RegionLike, Type, ValueLike,
+use melior::ir::{
+    attribute::{
+        BoolAttribute, FlatSymbolRefAttribute, IntegerAttribute, StringAttribute, TypeAttribute,
     },
+    operation::OperationBuilder,
+    r#type::IntegerType,
+    Block, BlockLike, Identifier, Location, Module, Region, RegionLike, Type,
 };
-use melior_autodiff::{
-    activity_attr, create_autodiff_op, enzymeCreateDifferentiatePass,
-    enzymeRegisterPasses, Activity,
-};
-use mlir_sys::{
-    mlirF64TypeGet, mlirFunctionTypeGet, mlirLocationUnknownGet,
-};
+use melior::pass::PassManager;
+use melior_autodiff::{enzymeCreateDifferentiatePass, Activity};
+use mlir_sys::{mlirF64TypeGet, mlirFunctionTypeGet};
 
 mod common;
-use common::setup_context;
-use common::{parse_square_autodiff_module, parse_tensor_autodiff_module};
+use common::{activity_array_attr, gen_autodiff, setup_context};
+
+fn parse_square_autodiff_module(ctx: &melior::Context) -> Module<'_> {
+    let module = Module::parse(
+        ctx,
+        r#"
+module {
+  func.func @square(%x: f64) -> f64 {
+    %next = arith.mulf %x, %x : f64
+    return %next : f64
+  }
+}
+"#,
+    )
+    .expect("failed to parse test module");
+    gen_autodiff(
+        ctx,
+        &module,
+        "dsquare",
+        "square",
+        &["f64", "f64"],
+        &["f64"],
+        &[Activity::Active],
+        &[Activity::ActiveNoNeed],
+        false,
+    );
+    module
+}
+
+fn parse_tensor_autodiff_module(ctx: &melior::Context) -> Module<'_> {
+    let module = Module::parse(
+        ctx,
+        r#"
+module {
+  func.func @square_tensor(%x: tensor<2xf64>) -> tensor<2xf64> {
+    %y = arith.mulf %x, %x : tensor<2xf64>
+    return %y : tensor<2xf64>
+  }
+}
+"#,
+    )
+    .expect("failed to parse tensor autodiff test module");
+    gen_autodiff(
+        ctx,
+        &module,
+        "dsquare_tensor",
+        "square_tensor",
+        &["tensor<2xf64>", "tensor<2xf64>"],
+        &["tensor<2xf64>"],
+        &[Activity::Active],
+        &[Activity::ActiveNoNeed],
+        false,
+    );
+    module
+}
 
 /// Minimal test: no inputs, just verifies the op constructs and serializes.
 #[test]
@@ -25,30 +74,35 @@ fn autodiff_op_no_inputs() {
     let loc = Location::unknown(&ctx);
     let module = Module::new(loc);
 
-    let autodiff_op = unsafe {
-        let raw_ctx = ctx.to_raw();
-        let raw_loc = mlirLocationUnknownGet(raw_ctx);
-        let result_types = [mlirF64TypeGet(raw_ctx)];
-        let activity_arr = [activity_attr(raw_ctx, Activity::Dup)];
-        let ret_activity_arr = [activity_attr(raw_ctx, Activity::Active)];
+    let result_types = [Type::float64(&ctx)];
+    let autodiff_op = OperationBuilder::new("enzyme.autodiff", loc)
+        .add_results(&result_types)
+        .add_attributes(&[
+            (
+                Identifier::new(&ctx, "fn"),
+                FlatSymbolRefAttribute::new(&ctx, "square").into(),
+            ),
+            (
+                Identifier::new(&ctx, "activity"),
+                activity_array_attr(&ctx, &[Activity::Dup]).into(),
+            ),
+            (
+                Identifier::new(&ctx, "ret_activity"),
+                activity_array_attr(&ctx, &[Activity::Active]).into(),
+            ),
+            (
+                Identifier::new(&ctx, "width"),
+                IntegerAttribute::new(IntegerType::new(&ctx, 64).into(), 1).into(),
+            ),
+            (
+                Identifier::new(&ctx, "strong_zero"),
+                BoolAttribute::new(&ctx, false).into(),
+            ),
+        ])
+        .build()
+        .unwrap();
 
-        create_autodiff_op(
-            raw_ctx,
-            "square",
-            &result_types,
-            &[],
-            &activity_arr,
-            &ret_activity_arr,
-            1,
-            false,
-            raw_loc,
-        )
-    };
-
-    assert!(!autodiff_op.ptr.is_null());
-    module
-        .body()
-        .append_operation(unsafe { melior::ir::Operation::from_raw(autodiff_op) });
+    module.body().append_operation(autodiff_op);
 
     let text = module.as_operation().to_string();
     eprintln!("autodiff_op_no_inputs:\n{text}");
@@ -70,33 +124,40 @@ fn autodiff_op_with_inputs() {
     // Build a caller function: (%x: f64, %dx: f64) -> f64
     // The body calls enzyme.autodiff @square(%x, %dx) and returns the result.
     let entry = Block::new(&[(f64_ty, loc), (f64_ty, loc)]);
-    let x = entry.argument(0).unwrap().to_raw();
-    let dx = entry.argument(1).unwrap().to_raw();
-
-    let autodiff_op = unsafe {
-        let raw_ctx = ctx.to_raw();
-        let raw_loc = mlirLocationUnknownGet(raw_ctx);
-        let result_types = [mlirF64TypeGet(raw_ctx)];
-        let inputs = [x, dx];
-        let activity_arr = [activity_attr(raw_ctx, Activity::Dup)];
-        let ret_activity_arr = [activity_attr(raw_ctx, Activity::Active)];
-
-        create_autodiff_op(
-            raw_ctx,
-            "square",
-            &result_types,
-            &inputs,
-            &activity_arr,
-            &ret_activity_arr,
-            1,
-            false,
-            raw_loc,
-        )
-    };
-    assert!(!autodiff_op.ptr.is_null());
+    let x = entry.argument(0).unwrap().into();
+    let dx = entry.argument(1).unwrap().into();
+    let result_types = [f64_ty];
+    let inputs = [x, dx];
+    let autodiff_op = OperationBuilder::new("enzyme.autodiff", loc)
+        .add_operands(&inputs)
+        .add_results(&result_types)
+        .add_attributes(&[
+            (
+                Identifier::new(&ctx, "fn"),
+                FlatSymbolRefAttribute::new(&ctx, "square").into(),
+            ),
+            (
+                Identifier::new(&ctx, "activity"),
+                activity_array_attr(&ctx, &[Activity::Dup]).into(),
+            ),
+            (
+                Identifier::new(&ctx, "ret_activity"),
+                activity_array_attr(&ctx, &[Activity::Active]).into(),
+            ),
+            (
+                Identifier::new(&ctx, "width"),
+                IntegerAttribute::new(IntegerType::new(&ctx, 64).into(), 1).into(),
+            ),
+            (
+                Identifier::new(&ctx, "strong_zero"),
+                BoolAttribute::new(&ctx, false).into(),
+            ),
+        ])
+        .build()
+        .unwrap();
 
     let result = entry
-        .append_operation(unsafe { melior::ir::Operation::from_raw(autodiff_op) })
+        .append_operation(autodiff_op)
         .result(0)
         .unwrap()
         .into();
@@ -166,7 +227,6 @@ fn differentiate_pass_lowers_autodiff() {
 
     eprintln!("before differentiation:\n{}", module.as_operation());
 
-    unsafe { enzymeRegisterPasses() };
     let pm = PassManager::new(&ctx);
     pm.add_pass(unsafe { melior::pass::Pass::from_raw_fn(enzymeCreateDifferentiatePass) });
     let result = pm.run(&mut module);
@@ -206,7 +266,6 @@ fn differentiate_pass_lowers_tensor_autodiff() {
     let ctx = setup_context();
     let mut module = parse_tensor_autodiff_module(&ctx);
 
-    unsafe { enzymeRegisterPasses() };
     let pm = PassManager::new(&ctx);
     pm.add_pass(unsafe { melior::pass::Pass::from_raw_fn(enzymeCreateDifferentiatePass) });
 

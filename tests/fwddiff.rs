@@ -1,22 +1,44 @@
-use melior::pass::PassManager;
-use melior::{
-    ir::{
-        attribute::{StringAttribute, TypeAttribute},
-        operation::OperationBuilder,
-        Block, BlockLike, Identifier, Location, Module, Region, RegionLike, Type, ValueLike,
+use melior::ir::{
+    attribute::{
+        BoolAttribute, FlatSymbolRefAttribute, IntegerAttribute, StringAttribute, TypeAttribute,
     },
+    operation::OperationBuilder,
+    r#type::IntegerType,
+    Block, BlockLike, Identifier, Location, Module, Region, RegionLike, Type,
 };
-use melior_autodiff::{
-    activity_attr, create_fwddiff_op, enzymeCreateDifferentiatePass,
-    enzymeRegisterPasses, Activity,
-};
-use mlir_sys::{
-    mlirF64TypeGet, mlirFunctionTypeGet, mlirLocationUnknownGet,
-};
+use melior::pass::PassManager;
+use melior_autodiff::{enzymeCreateDifferentiatePass, Activity};
+use mlir_sys::{mlirF64TypeGet, mlirFunctionTypeGet};
 
 mod common;
-use common::setup_context;
-use common::parse_tensor_fwddiff_module;
+use common::{activity_array_attr, gen_fwddiff, setup_context};
+
+fn parse_tensor_fwddiff_module(ctx: &melior::Context) -> Module<'_> {
+    let module = Module::parse(
+        ctx,
+        r#"
+module {
+  func.func @sin_tensor(%x: tensor<2xf64>) -> tensor<2xf64> {
+    %y = math.sin %x : tensor<2xf64>
+    return %y : tensor<2xf64>
+  }
+}
+"#,
+    )
+    .expect("failed to parse tensor fwddiff test module");
+    gen_fwddiff(
+        ctx,
+        &module,
+        "dsin_tensor",
+        "sin_tensor",
+        &["tensor<2xf64>", "tensor<2xf64>"],
+        &["tensor<2xf64>"],
+        &[Activity::Dup],
+        &[Activity::DupNoNeed],
+        false,
+    );
+    module
+}
 
 /// Forward-mode sibling of enzyme.autodiff: verify the C API constructs an
 /// enzyme.fwddiff op with operands and activity metadata intact.
@@ -29,39 +51,39 @@ fn forwarddiff_op_with_inputs() {
     let f64_ty = Type::float64(&ctx);
 
     let entry = Block::new(&[(f64_ty, loc), (f64_ty, loc)]);
-    let x = entry.argument(0).unwrap().to_raw();
-    let dx = entry.argument(1).unwrap().to_raw();
+    let x = entry.argument(0).unwrap().into();
+    let dx = entry.argument(1).unwrap().into();
+    let result_types = [f64_ty, f64_ty];
+    let inputs = [x, dx];
+    let fwddiff_op = OperationBuilder::new("enzyme.fwddiff", loc)
+        .add_operands(&inputs)
+        .add_results(&result_types)
+        .add_attributes(&[
+            (
+                Identifier::new(&ctx, "fn"),
+                FlatSymbolRefAttribute::new(&ctx, "square").into(),
+            ),
+            (
+                Identifier::new(&ctx, "activity"),
+                activity_array_attr(&ctx, &[Activity::DupNoNeed]).into(),
+            ),
+            (
+                Identifier::new(&ctx, "ret_activity"),
+                activity_array_attr(&ctx, &[Activity::Active, Activity::ConstNoNeed]).into(),
+            ),
+            (
+                Identifier::new(&ctx, "width"),
+                IntegerAttribute::new(IntegerType::new(&ctx, 64).into(), 1).into(),
+            ),
+            (
+                Identifier::new(&ctx, "strong_zero"),
+                BoolAttribute::new(&ctx, true).into(),
+            ),
+        ])
+        .build()
+        .unwrap();
 
-    let fwddiff_op = unsafe {
-        let raw_ctx = ctx.to_raw();
-        let raw_loc = mlirLocationUnknownGet(raw_ctx);
-        let result_types = [mlirF64TypeGet(raw_ctx), mlirF64TypeGet(raw_ctx)];
-        let inputs = [x, dx];
-        let activity_arr = [activity_attr(raw_ctx, Activity::DupNoNeed)];
-        let ret_activity_arr = [
-            activity_attr(raw_ctx, Activity::Active),
-            activity_attr(raw_ctx, Activity::ConstNoNeed),
-        ];
-
-        create_fwddiff_op(
-            raw_ctx,
-            "square",
-            &result_types,
-            &inputs,
-            &activity_arr,
-            &ret_activity_arr,
-            1,
-            true,
-            raw_loc,
-        )
-    };
-    assert!(!fwddiff_op.ptr.is_null());
-
-    let primal = entry
-        .append_operation(unsafe { melior::ir::Operation::from_raw(fwddiff_op) })
-        .result(0)
-        .unwrap()
-        .into();
+    let primal = entry.append_operation(fwddiff_op).result(0).unwrap().into();
 
     let ret = OperationBuilder::new("func.return", loc)
         .add_operands(&[primal])
@@ -120,7 +142,6 @@ fn differentiate_pass_lowers_tensor_fwddiff() {
     let ctx = setup_context();
     let mut module = parse_tensor_fwddiff_module(&ctx);
 
-    unsafe { enzymeRegisterPasses() };
     let pm = PassManager::new(&ctx);
     pm.add_pass(unsafe { melior::pass::Pass::from_raw_fn(enzymeCreateDifferentiatePass) });
 

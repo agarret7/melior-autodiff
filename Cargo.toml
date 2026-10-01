@@ -1,3 +1,6 @@
+[workspace]
+resolver = "3"
+
 [package]
 name = "melior-autodiff"
 version = "0.0.1"
@@ -6,8 +9,8 @@ description = "Reverse-mode automatic differentiation as a Melior pass, with a u
 license = "Apache-2.0"
 
 [dependencies]
-melior = "0.27.0"
-mlir-sys = "220.0.2"
+melior = { git = "https://github.com/agarret7/melior", branch = "main" }
+mlir-sys = "230.0.1"
 
 [build-dependencies]
 bindgen = "0.70"

@@ -2,20 +2,19 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use melior::pass::conversion::{
     create_reconcile_unrealized_casts, create_scf_to_control_flow, create_to_llvm,
 };
-use melior::pass::transform::{create_canonicalizer, create_cse, create_inliner, create_symbol_dce};
+use melior::pass::transform::{
+    create_canonicalizer, create_cse, create_inliner, create_symbol_dce,
+};
 use melior::pass::PassManager;
-use melior::{dialect::DialectRegistry, ir::Module, utility::register_all_dialects, Context, ExecutionEngine};
+use melior::{
+    dialect::DialectRegistry, ir::Module, utility::register_all_dialects, Context, ExecutionEngine,
+};
 use melior_autodiff::{
     enzymeCreateConvertEnzymeToMemRefPass, enzymeCreateDifferentiatePass,
-    enzymeRegisterDialectExtensions, enzymeRegisterPasses, enzyme_dialect_handle,
+    enzymeRegisterDialectExtensions, enzyme_dialect_handle,
 };
 use mlir_sys::mlirDialectHandleLoadDialect;
-use std::sync::Once;
-
-static PASSES_REGISTERED: Once = Once::new();
-
 fn setup_context() -> Context {
-    PASSES_REGISTERED.call_once(|| unsafe { enzymeRegisterPasses() });
     let registry = DialectRegistry::new();
     register_all_dialects(&registry);
     unsafe { enzymeRegisterDialectExtensions(registry.to_raw()) };
@@ -183,7 +182,8 @@ fn bench_execute_boxed(c: &mut Criterion) {
         pm.run(&mut module).unwrap();
         let engine = ExecutionEngine::new(&module, 3, &[], false, false);
 
-        let dsquare = melior_autodiff::lookup_jit_fn!(&engine, "dsquare", fn(x: f64, dr: f64) -> f64);
+        let dsquare =
+            melior_autodiff::lookup_jit_fn!(&engine, "dsquare", fn(x: f64, dr: f64) -> f64);
 
         group.bench_function("dsquare", |b| {
             b.iter(|| black_box(dsquare(black_box(3.0), black_box(1.0))));
@@ -244,8 +244,7 @@ fn bench_execute_raw(c: &mut Criterion) {
         // raw function pointer: lookup once, call directly with C ABI
         let raw = engine.lookup("dsquare");
         assert!(!raw.is_null(), "lookup returned null for dsquare");
-        let dsquare_fn: unsafe extern "C" fn(f64, f64) -> f64 =
-            unsafe { std::mem::transmute(raw) };
+        let dsquare_fn: unsafe extern "C" fn(f64, f64) -> f64 = unsafe { std::mem::transmute(raw) };
 
         group.bench_function("dsquare_raw_ptr", |b| {
             b.iter(|| {
@@ -283,8 +282,7 @@ fn bench_execute_raw(c: &mut Criterion) {
 
         let raw = engine.lookup("dpoly");
         assert!(!raw.is_null(), "lookup returned null for dpoly");
-        let dpoly_fn: unsafe extern "C" fn(f64, f64) -> f64 =
-            unsafe { std::mem::transmute(raw) };
+        let dpoly_fn: unsafe extern "C" fn(f64, f64) -> f64 = unsafe { std::mem::transmute(raw) };
 
         group.bench_function("dpoly_x8_raw_ptr", |b| {
             b.iter(|| {
@@ -350,5 +348,12 @@ fn bench_strong_zero(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_compile, bench_execute, bench_execute_boxed, bench_execute_raw, bench_strong_zero);
+criterion_group!(
+    benches,
+    bench_compile,
+    bench_execute,
+    bench_execute_boxed,
+    bench_execute_raw,
+    bench_strong_zero
+);
 criterion_main!(benches);

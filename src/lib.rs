@@ -18,17 +18,10 @@ mod sys {
 }
 
 pub use sys::{
-    enzymeCreateConvertEnzymeToMemRefPass, enzymeCreateDifferentiatePass,
-    enzymeCreateDifferentiatePassWithOptions, enzymeRegisterDialectExtensions,
-    enzymeRegisterPasses,
+    enzymeCreateBatchDiffPass, enzymeCreateBatchPass, enzymeCreateConvertEnzymeToMemRefPass,
+    enzymeCreateDifferentiatePass, enzymeCreateDifferentiatePassWithOptions,
+    enzymeCreateRemoveUnusedEnzymeOpsPass, enzymeRegisterDialectExtensions,
 };
-
-fn mlir_string_ref(s: &str) -> mlir_sys::MlirStringRef {
-    mlir_sys::MlirStringRef {
-        data: s.as_ptr() as *const std::os::raw::c_char,
-        length: s.len(),
-    }
-}
 
 pub unsafe fn enzyme_dialect_handle() -> mlir_sys::MlirDialectHandle {
     sys::mlirGetDialectHandle__enzyme__()
@@ -72,94 +65,4 @@ macro_rules! lookup_jit_fn {
         };
         Box::new(move |$($a: $A),*| unsafe { f($($a),*) }) as Box<dyn Fn($($A),*) -> $R>
     }};
-}
-
-pub unsafe fn create_autodiff_op(
-    ctx: mlir_sys::MlirContext,
-    function: &str,
-    result_types: &[mlir_sys::MlirType],
-    inputs: &[mlir_sys::MlirValue],
-    activity: &[mlir_sys::MlirAttribute],
-    ret_activity: &[mlir_sys::MlirAttribute],
-    width: i64,
-    strong_zero: bool,
-    loc: mlir_sys::MlirLocation,
-) -> mlir_sys::MlirOperation {
-    unsafe {
-        sys::enzymeAutoDiffOpCreate(
-            ctx,
-            mlir_string_ref(function),
-            result_types.as_ptr(),
-            result_types.len() as isize,
-            inputs.as_ptr(),
-            inputs.len() as isize,
-            activity.as_ptr(),
-            activity.len() as isize,
-            ret_activity.as_ptr(),
-            ret_activity.len() as isize,
-            width,
-            strong_zero,
-            loc,
-        )
-    }
-}
-
-pub unsafe fn create_fwddiff_op(
-    ctx: mlir_sys::MlirContext,
-    function: &str,
-    result_types: &[mlir_sys::MlirType],
-    inputs: &[mlir_sys::MlirValue],
-    activity: &[mlir_sys::MlirAttribute],
-    ret_activity: &[mlir_sys::MlirAttribute],
-    width: i64,
-    strong_zero: bool,
-    loc: mlir_sys::MlirLocation,
-) -> mlir_sys::MlirOperation {
-    unsafe {
-        sys::enzymeForwardDiffOpCreate(
-            ctx,
-            mlir_string_ref(function),
-            result_types.as_ptr(),
-            result_types.len() as isize,
-            inputs.as_ptr(),
-            inputs.len() as isize,
-            activity.as_ptr(),
-            activity.len() as isize,
-            ret_activity.as_ptr(),
-            ret_activity.len() as isize,
-            width,
-            strong_zero,
-            loc,
-        )
-    }
-}
-
-pub unsafe fn create_jacobian_op(
-    ctx: mlir_sys::MlirContext,
-    function: &str,
-    result_types: &[mlir_sys::MlirType],
-    inputs: &[mlir_sys::MlirValue],
-    activity: &[mlir_sys::MlirAttribute],
-    ret_activity: &[mlir_sys::MlirAttribute],
-    width: i64,
-    strong_zero: bool,
-    loc: mlir_sys::MlirLocation,
-) -> mlir_sys::MlirOperation {
-    unsafe {
-        sys::enzymeJacobianOpCreate(
-            ctx,
-            mlir_string_ref(function),
-            result_types.as_ptr(),
-            result_types.len() as isize,
-            inputs.as_ptr(),
-            inputs.len() as isize,
-            activity.as_ptr(),
-            activity.len() as isize,
-            ret_activity.as_ptr(),
-            ret_activity.len() as isize,
-            width,
-            strong_zero,
-            loc,
-        )
-    }
 }

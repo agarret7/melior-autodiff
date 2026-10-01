@@ -17,9 +17,9 @@ fn build_enzyme_bindings() {
 
     let lib_dir = enzyme_build.join("Enzyme/MLIR/Integrations/c");
 
-    let llvm_prefix = std::env::var("MLIR_SYS_220_PREFIX")
+    let llvm_prefix = std::env::var("MLIR_SYS_230_PREFIX")
         .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("/home/linuxbrew/.linuxbrew/opt/llvm"));
+        .unwrap_or_else(|_| PathBuf::from("/usr/lib/llvm-23"));
 
     println!("cargo:rustc-link-search=native={}", lib_dir.display());
     // MLIRCAPIEnzyme depends on these MLIR/Enzyme libs.
@@ -85,7 +85,7 @@ fn build_enzyme_bindings() {
         // Reuse mlir_sys types rather than re-generating them.
         .blocklist_type("Mlir.*")
         .raw_line("use mlir_sys::*;")
-        .allowlist_function("enzymeActivity.*|enzymeAutoDiff.*|enzymeJacobian.*|enzymeForward.*|enzymeRegister.*|enzymeCreate.*|enzymeConvert.*|mlirGetDialectHandle__enzyme__")
+        .allowlist_function("enzymeActivity.*|enzymeRegisterDialectExtensions|enzymeCreate.*|enzymeConvert.*|mlirGetDialectHandle__enzyme__")
         .allowlist_type("")
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
         .generate()

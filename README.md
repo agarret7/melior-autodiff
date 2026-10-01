@@ -3,15 +3,15 @@
 Rust/[Melior](https://github.com/mlir-rs/melior) bindings for [Enzyme](https://github.com/EnzymeAD/Enzyme)'s MLIR C API.
 
 Enzyme's MLIR integration exposes automatic differentiation as a dialect pass over MLIR IR. This crate
-wraps the C API via bindgen and provides a thin Rust layer for constructing Enzyme ops, running the
+wraps the C API via bindgen and provides a thin Rust layer for registering Enzyme, running the
 differentiation pipeline, and calling JIT-compiled gradients with near-zero overhead.
 
 ## What's here
 
 | | |
 |---|---|
-| **Op construction** | `create_autodiff_op`, `create_fwddiff_op`, `create_jacobian_op` — build `enzyme.autodiff`, `enzyme.fwddiff`, `enzyme.jacobian` ops with typed activity attributes |
-| **Pass registration** | `enzymeRegisterPasses`, `enzymeRegisterDialectExtensions`, `enzymeCreateDifferentiatePass`, `enzymeCreateConvertEnzymeToMemRefPass` |
+| **Op construction** | Build `enzyme.autodiff`, `enzyme.fwddiff`, `enzyme.jacobian`, and `enzyme.batch` with Melior's `OperationBuilder`; `activity_attr` provides typed Enzyme activity attributes |
+| **Pass construction** | `enzymeRegisterDialectExtensions`, `enzymeCreateDifferentiatePass`, `enzymeCreateConvertEnzymeToMemRefPass` |
 | **JIT utilities** | `lookup_jit_fn!` — look up a compiled function by name and return a `Box<dyn Fn(...)>`, transmute isolated to construction |
 | **Benchmarks** | Criterion suite measuring compile latency (~6–9 ms), `invoke_packed` overhead (~750 ns), and raw/boxed call cost (~2 ns) |
 
