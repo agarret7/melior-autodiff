@@ -1,3 +1,4 @@
+use melior::ir::Module;
 use melior::pass::conversion::{
     create_reconcile_unrealized_casts, create_scf_to_control_flow, create_to_llvm,
 };
@@ -6,18 +7,14 @@ use melior::pass::transform::{
 };
 use melior::pass::PassManager;
 use melior::ExecutionEngine;
-use melior::{ir::Module, Context};
 use melior_autodiff::{
-    enzymeCreateConvertEnzymeToMemRefPass, enzymeCreateDifferentiatePass, Activity,
+    create_context, enzymeCreateConvertEnzymeToMemRefPass, enzymeCreateDifferentiatePass,
 };
 
-mod common;
-use common::{gen_fwddiff, setup_context};
-
-fn compile<'a>(ctx: &'a Context, src: &str) -> (Module<'a>, ExecutionEngine) {
-    let mut module = Module::parse(ctx, src).expect("parse failed");
-    derive_wrappers(ctx, &module, src);
-    let pm = PassManager::new(ctx);
+fn compile(src: &str) -> ExecutionEngine {
+    let ctx = create_context();
+    let mut module = Module::parse(&ctx, src).expect("parse failed");
+    let pm = PassManager::new(&ctx);
     pm.add_pass(unsafe { melior::pass::Pass::from_raw_fn(enzymeCreateDifferentiatePass) });
     pm.add_pass(unsafe { melior::pass::Pass::from_raw_fn(enzymeCreateConvertEnzymeToMemRefPass) });
     pm.add_pass(create_inliner_pass());
@@ -28,21 +25,7 @@ fn compile<'a>(ctx: &'a Context, src: &str) -> (Module<'a>, ExecutionEngine) {
     pm.add_pass(create_to_llvm());
     pm.add_pass(create_reconcile_unrealized_casts());
     pm.run(&mut module).expect("lowering failed");
-    let engine = ExecutionEngine::new(&module, 2, &[], false, false);
-    (module, engine)
-}
-
-fn derive_wrappers(ctx: &Context, module: &Module<'_>, src: &str) {
-    if src.contains("func.func @trace4") {
-        gen_fwddiff(ctx, module, "jvp_trace4", "trace4",
-            &["memref<4x4xf64>", "memref<4x4xf64>"], &["f64"],
-            &[Activity::Dup], &[Activity::DupNoNeed], true);
-    }
-    if src.contains("func.func @relu") {
-        gen_fwddiff(ctx, module, "jvp_relu", "relu",
-            &["f64", "f64"], &["f64"],
-            &[Activity::Dup], &[Activity::DupNoNeed], true);
-    }
+    ExecutionEngine::new(&module, 2, &[], false, false)
 }
 
 fn approx(a: f64, b: f64) -> bool {
@@ -85,14 +68,21 @@ module {
     }
     return %r : f64
   }
+  func.func @jvp_trace4(%A: memref<4x4xf64>, %dA: memref<4x4xf64>) -> f64
+      attributes { llvm.emit_c_interface } {
+    %d = enzyme.fwddiff @trace4(%A, %dA) {
+      activity = [#enzyme<activity enzyme_dup>],
+      ret_activity = [#enzyme<activity enzyme_dupnoneed>]
+    } : (memref<4x4xf64>, memref<4x4xf64>) -> f64
+    return %d : f64
+  }
 }
 "#;
 
 // f(x) = max(0, x).  JVP: dx if x > 0, else 0.
 #[test]
 fn grad_relu() {
-    let ctx = setup_context();
-    let (_, engine) = compile(&ctx, r#"
+    let engine = compile(r#"
 module {
   func.func @relu(%x: f64) -> f64 attributes { llvm.emit_c_interface } {
     %zero = arith.constant 0.0 : f64
@@ -104,8 +94,16 @@ module {
     }
     return %result : f64
   }
+  func.func @jvp_relu(%x: f64, %dx: f64) -> f64 attributes { llvm.emit_c_interface } {
+    %d = enzyme.fwddiff @relu(%x, %dx) {
+      activity = [#enzyme<activity enzyme_dup>],
+      ret_activity = [#enzyme<activity enzyme_dupnoneed>]
+    } : (f64, f64) -> f64
+    return %d : f64
+  }
 }
-"#);
+"#,
+    );
 
     type JvpFn = unsafe extern "C" fn(f64, f64) -> f64;
     let jvp: JvpFn = unsafe { std::mem::transmute(engine.lookup("_mlir_ciface_jvp_relu")) };
@@ -128,8 +126,7 @@ type JvpTraceFn = unsafe extern "C" fn(*mut MemRef<2>, *mut MemRef<2>) -> f64;
 
 #[test]
 fn primal_trace4() {
-    let ctx = setup_context();
-    let (_, engine) = compile(&ctx, TRACE4_MODULE);
+    let engine = compile(TRACE4_MODULE);
     let f: TraceFn = unsafe { std::mem::transmute(engine.lookup("_mlir_ciface_trace4")) };
     let mut eye: [[f64; 4]; 4] = [
         [1.0, 0.0, 0.0, 0.0],
@@ -144,10 +141,8 @@ fn primal_trace4() {
 // trace is linear: fwddiff(@trace4, A, dA) = trace(dA).
 #[test]
 fn grad_trace4() {
-    let ctx = setup_context();
-    let (_, engine) = compile(&ctx, TRACE4_MODULE);
-    let jvp: JvpTraceFn =
-        unsafe { std::mem::transmute(engine.lookup("_mlir_ciface_jvp_trace4")) };
+    let engine = compile(TRACE4_MODULE);
+    let jvp: JvpTraceFn = unsafe { std::mem::transmute(engine.lookup("_mlir_ciface_jvp_trace4")) };
 
     let mut a: [[f64; 4]; 4] = [
         [2.0, 1.0, 0.0, 0.0],
@@ -162,16 +157,31 @@ fn grad_trace4() {
         [0.0, 0.0, 1.0, 0.0],
         [0.0, 0.0, 0.0, 1.0],
     ];
-    let r = unsafe { jvp(&mut MemRef::<2>::from_2d(&mut a), &mut MemRef::<2>::from_2d(&mut eye)) };
+    let r = unsafe {
+        jvp(
+            &mut MemRef::<2>::from_2d(&mut a),
+            &mut MemRef::<2>::from_2d(&mut eye),
+        )
+    };
     assert!(approx(r, 4.0), "jvp with dA=I: {r}, expected 4");
 
     let mut e01: [[f64; 4]; 4] = [[0.0; 4]; 4];
     e01[0][1] = 1.0;
-    let r = unsafe { jvp(&mut MemRef::<2>::from_2d(&mut a), &mut MemRef::<2>::from_2d(&mut e01)) };
+    let r = unsafe {
+        jvp(
+            &mut MemRef::<2>::from_2d(&mut a),
+            &mut MemRef::<2>::from_2d(&mut e01),
+        )
+    };
     assert!(approx(r, 0.0), "jvp with dA=e_01: {r}, expected 0");
 
     let mut e22: [[f64; 4]; 4] = [[0.0; 4]; 4];
     e22[2][2] = 1.0;
-    let r = unsafe { jvp(&mut MemRef::<2>::from_2d(&mut a), &mut MemRef::<2>::from_2d(&mut e22)) };
+    let r = unsafe {
+        jvp(
+            &mut MemRef::<2>::from_2d(&mut a),
+            &mut MemRef::<2>::from_2d(&mut e22),
+        )
+    };
     assert!(approx(r, 1.0), "jvp with dA=e_22: {r}, expected 1");
 }

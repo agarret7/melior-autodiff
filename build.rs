@@ -85,7 +85,7 @@ fn build_enzyme_bindings() {
         // Reuse mlir_sys types rather than re-generating them.
         .blocklist_type("Mlir.*")
         .raw_line("use mlir_sys::*;")
-        .allowlist_function("enzymeActivity.*|enzymeRegisterDialectExtensions|enzymeCreate.*|enzymeConvert.*|mlirGetDialectHandle__enzyme__")
+        .allowlist_function("enzymeActivity.*|enzymeRegisterDialectExtensions|enzymeCreate.*|enzymeConvert.*|enzyme.*OpCreate|mlirGetDialectHandle__enzyme__")
         .allowlist_type("")
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
         .generate()

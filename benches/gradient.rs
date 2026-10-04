@@ -3,37 +3,21 @@ use melior::pass::conversion::{
     create_reconcile_unrealized_casts, create_scf_to_control_flow, create_to_llvm,
 };
 use melior::pass::transform::{
-    create_canonicalizer, create_cse, create_inliner, create_symbol_dce,
+    create_canonicalizer_pass, create_cse_pass, create_inliner_pass, create_symbol_dce_pass,
 };
 use melior::pass::PassManager;
-use melior::{
-    dialect::DialectRegistry, ir::Module, utility::register_all_dialects, Context, ExecutionEngine,
-};
+use melior::{ir::Module, ExecutionEngine};
 use melior_autodiff::{
-    enzymeCreateConvertEnzymeToMemRefPass, enzymeCreateDifferentiatePass,
-    enzymeRegisterDialectExtensions, enzyme_dialect_handle,
+    create_context, enzymeCreateConvertEnzymeToMemRefPass, enzymeCreateDifferentiatePass,
 };
-use mlir_sys::mlirDialectHandleLoadDialect;
-fn setup_context() -> Context {
-    let registry = DialectRegistry::new();
-    register_all_dialects(&registry);
-    unsafe { enzymeRegisterDialectExtensions(registry.to_raw()) };
-    let ctx = Context::new_with_registry(&registry, false);
-    ctx.load_all_available_dialects();
-    unsafe {
-        let handle = enzyme_dialect_handle();
-        mlirDialectHandleLoadDialect(handle, ctx.to_raw());
-    }
-    ctx
-}
 
 fn add_lowering_passes(pm: &PassManager<'_>) {
     pm.add_pass(unsafe { melior::pass::Pass::from_raw_fn(enzymeCreateDifferentiatePass) });
     pm.add_pass(unsafe { melior::pass::Pass::from_raw_fn(enzymeCreateConvertEnzymeToMemRefPass) });
-    pm.add_pass(create_inliner());
-    pm.add_pass(create_canonicalizer());
-    pm.add_pass(create_cse());
-    pm.add_pass(create_symbol_dce());
+    pm.add_pass(create_inliner_pass());
+    pm.add_pass(create_canonicalizer_pass());
+    pm.add_pass(create_cse_pass());
+    pm.add_pass(create_symbol_dce_pass());
     pm.add_pass(create_scf_to_control_flow());
     pm.add_pass(create_to_llvm());
     pm.add_pass(create_reconcile_unrealized_casts());
@@ -80,7 +64,7 @@ module {
 // Full pipeline: parse → differentiate → lower → JIT compile.
 // Cost Steel pays once at sampler setup.
 fn bench_compile(c: &mut Criterion) {
-    let ctx = setup_context();
+    let ctx = create_context();
     let mut group = c.benchmark_group("compile");
 
     group.bench_function("square", |b| {
@@ -108,7 +92,7 @@ fn bench_compile(c: &mut Criterion) {
 
 // Per-call gradient cost: compile once, call many times.
 fn bench_execute(c: &mut Criterion) {
-    let ctx = setup_context();
+    let ctx = create_context();
     let mut group = c.benchmark_group("execute");
 
     // dsquare(x, 1.0) = 2x
@@ -172,7 +156,7 @@ fn bench_execute(c: &mut Criterion) {
 
 // Box<dyn Fn> wrapper — transmute at construction, vtable dispatch per call.
 fn bench_execute_boxed(c: &mut Criterion) {
-    let ctx = setup_context();
+    let ctx = create_context();
     let mut group = c.benchmark_group("execute_boxed");
 
     {
@@ -211,7 +195,7 @@ fn bench_execute_boxed(c: &mut Criterion) {
 // invoke_packed goes through a void(**)(void**) trampoline; lookup gives the
 // native C ABI pointer directly.
 fn bench_execute_raw(c: &mut Criterion) {
-    let ctx = setup_context();
+    let ctx = create_context();
     let mut group = c.benchmark_group("execute_raw");
 
     {
@@ -297,7 +281,7 @@ fn bench_execute_raw(c: &mut Criterion) {
 
 // Zero vs non-zero seed — shows the strong_zero select guard cost at runtime.
 fn bench_strong_zero(c: &mut Criterion) {
-    let ctx = setup_context();
+    let ctx = create_context();
 
     let pm = PassManager::new(&ctx);
     add_lowering_passes(&pm);

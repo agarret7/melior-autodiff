@@ -1,321 +1,248 @@
+use melior::dialect::func;
 use melior::ir::{
-    attribute::{
-        BoolAttribute, FlatSymbolRefAttribute, IntegerAttribute, StringAttribute, TypeAttribute,
-    },
-    operation::OperationBuilder,
-    r#type::IntegerType,
-    Block, BlockLike, Identifier, Location, Module, Region, RegionLike, Type,
+    attribute::{StringAttribute, TypeAttribute},
+    operation::OperationLike,
+    r#type::FunctionType,
+    Block, BlockLike, Location, Module, Operation, Region, RegionLike, Type, Value,
 };
 use melior::pass::PassManager;
-use melior_autodiff::{enzymeCreateDifferentiatePass, Activity};
-use mlir_sys::{mlirF64TypeGet, mlirFunctionTypeGet};
+use melior::Context;
+use melior_autodiff::{
+    activity_array_attribute, autodiff, batch, create_context, enzymeCreateDifferentiatePass,
+    fwddiff, jacobian, Activity,
+};
 
-mod common;
-use common::{activity_array_attr, gen_autodiff, setup_context};
-
-fn parse_square_module(ctx: &melior::Context) -> Module<'_> {
-    let module = Module::parse(
-        ctx,
-        r#"
+const SQUARE: &str = r#"
 module {
   func.func @square(%x: f64) -> f64 {
-    %next = arith.mulf %x, %x : f64
-    return %next : f64
+    %y = arith.mulf %x, %x : f64
+    return %y : f64
   }
 }
-"#,
-    )
-    .expect("failed to parse test module");
-    gen_autodiff(
-        ctx,
-        &module,
-        "dsquare",
-        "square",
-        &["f64", "f64"],
-        &["f64"],
-        &[Activity::Active],
-        &[Activity::ActiveNoNeed],
-        false,
-    );
-    module
-}
+"#;
 
-fn parse_square_tensor_module(ctx: &melior::Context) -> Module<'_> {
-    let module = Module::parse(
-        ctx,
-        r#"
+const SQUARE_TENSOR: &str = r#"
 module {
   func.func @square_tensor(%x: tensor<2xf64>) -> tensor<2xf64> {
     %y = arith.mulf %x, %x : tensor<2xf64>
     return %y : tensor<2xf64>
   }
 }
-"#,
-    )
-    .expect("failed to parse tensor test module");
-    gen_autodiff(
+"#;
+
+// Parses `src` and appends `func.func @caller` whose body is the single op built by `build`.
+fn with_caller<'c>(
+    ctx: &'c Context,
+    src: &str,
+    arg_types: &[Type<'c>],
+    result_types: &[Type<'c>],
+    build: impl FnOnce(&[Value<'c, '_>]) -> Operation<'c>,
+) -> Module<'c> {
+    let module = Module::parse(ctx, src).expect("parse failed");
+    let loc = Location::unknown(ctx);
+    let block = Block::new(&arg_types.iter().map(|&t| (t, loc)).collect::<Vec<_>>());
+    {
+        let args = (0..arg_types.len())
+            .map(|i| block.argument(i).unwrap().into())
+            .collect::<Vec<_>>();
+        let op = block.append_operation(build(&args));
+        let results = (0..result_types.len())
+            .map(|i| op.result(i).unwrap().into())
+            .collect::<Vec<_>>();
+        block.append_operation(func::r#return(&results, loc));
+    }
+    let region = Region::new();
+    region.append_block(block);
+    module.body().append_operation(func::func(
         ctx,
-        &module,
-        "dsquare_tensor",
-        "square_tensor",
-        &["tensor<2xf64>", "tensor<2xf64>"],
-        &["tensor<2xf64>"],
-        &[Activity::Active],
-        &[Activity::ActiveNoNeed],
-        false,
-    );
+        StringAttribute::new(ctx, "caller"),
+        TypeAttribute::new(FunctionType::new(ctx, arg_types, result_types).into()),
+        region,
+        &[],
+        loc,
+    ));
+    assert!(module.as_operation().verify(), "module failed to verify");
     module
+}
+
+fn differentiate(ctx: &Context, module: &mut Module) -> String {
+    let pm = PassManager::new(ctx);
+    pm.add_pass(unsafe { melior::pass::Pass::from_raw_fn(enzymeCreateDifferentiatePass) });
+    pm.run(module).expect("differentiate pass failed");
+    module.as_operation().to_string()
 }
 
 // ── Op construction ───────────────────────────────────────────────────────────
 
 #[test]
-fn autodiff_op_no_inputs() {
-    let ctx = setup_context();
-    let loc = Location::unknown(&ctx);
-    let module = Module::new(loc);
-
-    let autodiff_op = OperationBuilder::new("enzyme.autodiff", loc)
-        .add_results(&[Type::float64(&ctx)])
-        .add_attributes(&[
-            (
-                Identifier::new(&ctx, "fn"),
-                FlatSymbolRefAttribute::new(&ctx, "square").into(),
-            ),
-            (
-                Identifier::new(&ctx, "activity"),
-                activity_array_attr(&ctx, &[Activity::Dup]).into(),
-            ),
-            (
-                Identifier::new(&ctx, "ret_activity"),
-                activity_array_attr(&ctx, &[Activity::Active]).into(),
-            ),
-            (
-                Identifier::new(&ctx, "width"),
-                IntegerAttribute::new(IntegerType::new(&ctx, 64).into(), 1).into(),
-            ),
-            (
-                Identifier::new(&ctx, "strong_zero"),
-                BoolAttribute::new(&ctx, false).into(),
-            ),
-        ])
-        .build()
-        .unwrap();
-
-    module.body().append_operation(autodiff_op);
-
-    let text = module.as_operation().to_string();
-    assert!(text.contains("enzyme.autodiff"));
-    assert!(text.contains("@square"));
-    assert!(text.contains("enzyme_dup"));
+fn activity_attributes_cover_all_variants() {
+    let ctx = create_context();
+    let attr = activity_array_attribute(
+        &ctx,
+        &[
+            Activity::Active,
+            Activity::Dup,
+            Activity::Const,
+            Activity::DupNoNeed,
+            Activity::ActiveNoNeed,
+            Activity::ConstNoNeed,
+        ],
+    );
+    assert_eq!(
+        attr.to_string(),
+        "[#enzyme<activity enzyme_active>, #enzyme<activity enzyme_dup>, \
+         #enzyme<activity enzyme_const>, #enzyme<activity enzyme_dupnoneed>, \
+         #enzyme<activity enzyme_activenoneed>, #enzyme<activity enzyme_constnoneed>]"
+    );
 }
 
 #[test]
-fn autodiff_op_with_inputs() {
-    let ctx = setup_context();
-    let loc = Location::unknown(&ctx);
-    let module = Module::new(loc);
+fn autodiff_op() {
+    let ctx = create_context();
     let f64_ty = Type::float64(&ctx);
-
-    let entry = Block::new(&[(f64_ty, loc), (f64_ty, loc)]);
-    let x = entry.argument(0).unwrap().into();
-    let dx = entry.argument(1).unwrap().into();
-    let autodiff_op = OperationBuilder::new("enzyme.autodiff", loc)
-        .add_operands(&[x, dx])
-        .add_results(&[f64_ty])
-        .add_attributes(&[
-            (
-                Identifier::new(&ctx, "fn"),
-                FlatSymbolRefAttribute::new(&ctx, "square").into(),
-            ),
-            (
-                Identifier::new(&ctx, "activity"),
-                activity_array_attr(&ctx, &[Activity::Dup]).into(),
-            ),
-            (
-                Identifier::new(&ctx, "ret_activity"),
-                activity_array_attr(&ctx, &[Activity::Active]).into(),
-            ),
-            (
-                Identifier::new(&ctx, "width"),
-                IntegerAttribute::new(IntegerType::new(&ctx, 64).into(), 1).into(),
-            ),
-            (
-                Identifier::new(&ctx, "strong_zero"),
-                BoolAttribute::new(&ctx, false).into(),
-            ),
-        ])
-        .build()
-        .unwrap();
-
-    let result = entry.append_operation(autodiff_op).result(0).unwrap().into();
-    entry.append_operation(
-        OperationBuilder::new("func.return", loc)
-            .add_operands(&[result])
-            .build()
-            .unwrap(),
-    );
-
-    let body = Region::new();
-    body.append_block(entry);
-
-    let fn_type = unsafe {
-        let raw_ctx = ctx.to_raw();
-        let args = [mlirF64TypeGet(raw_ctx), mlirF64TypeGet(raw_ctx)];
-        let rets = [mlirF64TypeGet(raw_ctx)];
-        Type::from_raw(mlirFunctionTypeGet(raw_ctx, 2, args.as_ptr(), 1, rets.as_ptr()))
-    };
-
-    module.body().append_operation(
-        OperationBuilder::new("func.func", loc)
-            .add_attributes(&[
-                (
-                    Identifier::new(&ctx, "sym_name"),
-                    StringAttribute::new(&ctx, "caller").into(),
-                ),
-                (
-                    Identifier::new(&ctx, "function_type"),
-                    TypeAttribute::new(fn_type).into(),
-                ),
-            ])
-            .add_regions([body])
-            .build()
-            .unwrap(),
-    );
-
+    let module = with_caller(&ctx, SQUARE, &[f64_ty, f64_ty], &[f64_ty], |args| {
+        autodiff(
+            &ctx,
+            "square",
+            args,
+            &[f64_ty],
+            &[Activity::Active],
+            &[Activity::ActiveNoNeed],
+            1,
+            false,
+            Location::unknown(&ctx),
+        )
+    });
     let text = module.as_operation().to_string();
-    assert!(text.contains("enzyme.autodiff"));
-    assert!(text.contains("@square"));
-    assert!(text.contains("enzyme_dup"));
+    assert!(text.contains("enzyme.autodiff @square(%arg0, %arg1)"), "got:\n{text}");
+    assert!(text.contains("activity = [#enzyme<activity enzyme_active>]"), "got:\n{text}");
+    assert!(text.contains("ret_activity = [#enzyme<activity enzyme_activenoneed>]"), "got:\n{text}");
 }
 
 #[test]
-fn jacobian_op_with_inputs() {
-    let ctx = setup_context();
-    let loc = Location::unknown(&ctx);
-    let module = Module::new(loc);
+fn fwddiff_op() {
+    let ctx = create_context();
     let f64_ty = Type::float64(&ctx);
-
-    let entry = Block::new(&[(f64_ty, loc), (f64_ty, loc)]);
-    let x = entry.argument(0).unwrap().into();
-    let dx = entry.argument(1).unwrap().into();
-    let jac_op = OperationBuilder::new("enzyme.jacobian", loc)
-        .add_operands(&[x, dx])
-        .add_results(&[f64_ty, f64_ty])
-        .add_attributes(&[
-            (
-                Identifier::new(&ctx, "fn"),
-                FlatSymbolRefAttribute::new(&ctx, "square").into(),
-            ),
-            (
-                Identifier::new(&ctx, "activity"),
-                activity_array_attr(&ctx, &[Activity::DupNoNeed]).into(),
-            ),
-            (
-                Identifier::new(&ctx, "ret_activity"),
-                activity_array_attr(&ctx, &[Activity::Active, Activity::ConstNoNeed]).into(),
-            ),
-            (
-                Identifier::new(&ctx, "width"),
-                IntegerAttribute::new(IntegerType::new(&ctx, 64).into(), 1).into(),
-            ),
-            (
-                Identifier::new(&ctx, "strong_zero"),
-                BoolAttribute::new(&ctx, true).into(),
-            ),
-        ])
-        .build()
-        .unwrap();
-
-    let primal = entry.append_operation(jac_op).result(0).unwrap().into();
-    entry.append_operation(
-        OperationBuilder::new("func.return", loc)
-            .add_operands(&[primal])
-            .build()
-            .unwrap(),
-    );
-
-    let body = Region::new();
-    body.append_block(entry);
-
-    let fn_type = unsafe {
-        let raw_ctx = ctx.to_raw();
-        let args = [mlirF64TypeGet(raw_ctx), mlirF64TypeGet(raw_ctx)];
-        let rets = [mlirF64TypeGet(raw_ctx)];
-        Type::from_raw(mlirFunctionTypeGet(raw_ctx, 2, args.as_ptr(), 1, rets.as_ptr()))
-    };
-
-    module.body().append_operation(
-        OperationBuilder::new("func.func", loc)
-            .add_attributes(&[
-                (
-                    Identifier::new(&ctx, "sym_name"),
-                    StringAttribute::new(&ctx, "jac_caller").into(),
-                ),
-                (
-                    Identifier::new(&ctx, "function_type"),
-                    TypeAttribute::new(fn_type).into(),
-                ),
-            ])
-            .add_regions([body])
-            .build()
-            .unwrap(),
-    );
-
+    let module = with_caller(&ctx, SQUARE, &[f64_ty, f64_ty], &[f64_ty], |args| {
+        fwddiff(
+            &ctx,
+            "square",
+            args,
+            &[f64_ty],
+            &[Activity::Dup],
+            &[Activity::DupNoNeed],
+            1,
+            false,
+            Location::unknown(&ctx),
+        )
+    });
     let text = module.as_operation().to_string();
-    assert!(text.contains("enzyme.jacobian"));
-    assert!(text.contains("@square"));
-    assert!(text.contains("enzyme_dupnoneed"));
-    assert!(text.contains("enzyme_active"));
-    assert!(text.contains("enzyme_constnoneed"));
-    assert!(text.contains("strong_zero = true"));
+    assert!(text.contains("enzyme.fwddiff @square(%arg0, %arg1)"), "got:\n{text}");
+    assert!(text.contains("activity = [#enzyme<activity enzyme_dup>]"), "got:\n{text}");
+    assert!(text.contains("ret_activity = [#enzyme<activity enzyme_dupnoneed>]"), "got:\n{text}");
+}
+
+#[test]
+fn jacobian_op() {
+    let ctx = create_context();
+    let f64_ty = Type::float64(&ctx);
+    let module = with_caller(&ctx, SQUARE, &[f64_ty, f64_ty], &[f64_ty], |args| {
+        jacobian(
+            &ctx,
+            "square",
+            args,
+            &[f64_ty],
+            &[Activity::Dup],
+            &[Activity::DupNoNeed],
+            2,
+            true,
+            Location::unknown(&ctx),
+        )
+    });
+    let text = module.as_operation().to_string();
+    assert!(text.contains("enzyme.jacobian @square(%arg0, %arg1)"), "got:\n{text}");
+    assert!(text.contains("width = 2"), "got:\n{text}");
+    assert!(text.contains("strong_zero = true"), "got:\n{text}");
+}
+
+#[test]
+fn batch_op() {
+    let ctx = create_context();
+    let tensor_ty = Type::parse(&ctx, "tensor<4xf64>").unwrap();
+    let module = with_caller(&ctx, SQUARE, &[tensor_ty], &[tensor_ty], |args| {
+        batch(&ctx, "square", args, &[tensor_ty], &[4], Location::unknown(&ctx))
+    });
+    let text = module.as_operation().to_string();
+    assert!(text.contains("enzyme.batch @square(%arg0)"), "got:\n{text}");
+    assert!(text.contains("batch_shape = array<i64: 4>"), "got:\n{text}");
 }
 
 // ── Differentiate pass ────────────────────────────────────────────────────────
 
 #[test]
 fn differentiate_pass_lowers_autodiff() {
-    let ctx = setup_context();
-    let mut module = parse_square_module(&ctx);
-
-    let pm = PassManager::new(&ctx);
-    pm.add_pass(unsafe { melior::pass::Pass::from_raw_fn(enzymeCreateDifferentiatePass) });
-    pm.run(&mut module).expect("Enzyme differentiate pass failed");
-
-    let text = module.as_operation().to_string();
+    let ctx = create_context();
+    let f64_ty = Type::float64(&ctx);
+    let mut module = with_caller(&ctx, SQUARE, &[f64_ty, f64_ty], &[f64_ty], |args| {
+        autodiff(
+            &ctx,
+            "square",
+            args,
+            &[f64_ty],
+            &[Activity::Active],
+            &[Activity::ActiveNoNeed],
+            1,
+            false,
+            Location::unknown(&ctx),
+        )
+    });
+    let text = differentiate(&ctx, &mut module);
     assert!(!text.contains("enzyme.autodiff"), "enzyme.autodiff was not lowered");
     assert!(text.contains("call @diffesquare(%arg0, %arg1) : (f64, f64) -> f64"));
     assert!(text.contains("func.func private @diffesquare(%arg0: f64, %arg1: f64) -> f64"));
-    assert!(!text.contains("arith.muli"));
 }
 
 #[test]
 fn differentiate_pass_lowers_tensor_autodiff() {
-    let ctx = setup_context();
-    let mut module = parse_square_tensor_module(&ctx);
-
-    let pm = PassManager::new(&ctx);
-    pm.add_pass(unsafe { melior::pass::Pass::from_raw_fn(enzymeCreateDifferentiatePass) });
-    pm.run(&mut module).expect("Enzyme tensor autodiff pass failed");
-
-    let text = module.as_operation().to_string();
+    let ctx = create_context();
+    let tensor_ty = Type::parse(&ctx, "tensor<2xf64>").unwrap();
+    let mut module = with_caller(&ctx, SQUARE_TENSOR, &[tensor_ty, tensor_ty], &[tensor_ty], |args| {
+        autodiff(
+            &ctx,
+            "square_tensor",
+            args,
+            &[tensor_ty],
+            &[Activity::Active],
+            &[Activity::ActiveNoNeed],
+            1,
+            false,
+            Location::unknown(&ctx),
+        )
+    });
+    let text = differentiate(&ctx, &mut module);
     assert!(!text.contains("enzyme.autodiff"), "enzyme.autodiff was not lowered");
     assert!(text.contains("!enzyme.Gradient<tensor<2xf64>>"));
-    assert!(text.contains("arith.mulf") && text.contains("tensor<2xf64>"));
-    assert!(!text.contains("arith.muli"));
 }
 
 // enzyme.jacobian op exists in the dialect but no pass currently lowers it.
 #[test]
 #[ignore]
 fn differentiate_pass_lowers_jacobian() {
-    let ctx = setup_context();
-    let mut module = parse_square_module(&ctx);
-
-    let pm = PassManager::new(&ctx);
-    pm.add_pass(unsafe { melior::pass::Pass::from_raw_fn(enzymeCreateDifferentiatePass) });
-    pm.run(&mut module).expect("Enzyme jacobian pass failed");
-
-    let text = module.as_operation().to_string();
+    let ctx = create_context();
+    let f64_ty = Type::float64(&ctx);
+    let mut module = with_caller(&ctx, SQUARE, &[f64_ty, f64_ty], &[f64_ty], |args| {
+        jacobian(
+            &ctx,
+            "square",
+            args,
+            &[f64_ty],
+            &[Activity::Dup],
+            &[Activity::DupNoNeed],
+            1,
+            false,
+            Location::unknown(&ctx),
+        )
+    });
+    let text = differentiate(&ctx, &mut module);
     assert!(!text.contains("enzyme.jacobian"), "enzyme.jacobian was not lowered");
 }

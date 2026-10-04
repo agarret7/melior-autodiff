@@ -10,8 +10,9 @@ differentiation pipeline, and calling JIT-compiled gradients with near-zero over
 
 | | |
 |---|---|
-| **Op construction** | Build `enzyme.autodiff`, `enzyme.fwddiff`, `enzyme.jacobian`, and `enzyme.batch` with Melior's `OperationBuilder`; `activity_attr` provides typed Enzyme activity attributes |
-| **Pass construction** | `enzymeRegisterDialectExtensions`, `enzymeCreateDifferentiatePass`, `enzymeCreateConvertEnzymeToMemRefPass` |
+| **Dialect setup** | `create_context()`, or `register_dialect_extensions` + `load_dialect` for a custom registry |
+| **Op construction** | Safe builders `autodiff`, `fwddiff`, `jacobian`, `batch` over Enzyme's C op constructors; `activity_attribute` / `activity_array_attribute` |
+| **Pass construction** | `enzymeCreateDifferentiatePass`, `enzymeCreateConvertEnzymeToMemRefPass`, `enzymeCreateBatchPass`, `enzymeCreateBatchDiffPass`, `enzymeCreateRemoveUnusedEnzymeOpsPass` |
 | **JIT utilities** | `lookup_jit_fn!` — look up a compiled function by name and return a `Box<dyn Fn(...)>`, transmute isolated to construction |
 | **Benchmarks** | Criterion suite measuring compile latency (~6–9 ms), `invoke_packed` overhead (~750 ns), and raw/boxed call cost (~2 ns) |
 
@@ -19,7 +20,7 @@ differentiation pipeline, and calling JIT-compiled gradients with near-zero over
 
 ```rust
 // Parse a module with an enzyme.autodiff op, lower it, and call the gradient.
-let ctx = setup_context();
+let ctx = create_context();
 let mut module = Module::parse(&ctx, MLIR_SOURCE).unwrap();
 
 let pm = PassManager::new(&ctx);
