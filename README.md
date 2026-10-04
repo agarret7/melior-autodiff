@@ -76,9 +76,5 @@ it entirely — use it for any inner loop (e.g. HMC leapfrog steps).
 
 ## Enzyme dialect boundary
 
-Only the core `enzyme.*` ops are exposed. The `impulse.*` PPL dialect (HMC/NUTS configs, simulate,
-sample) requires separate dialect registration not yet wired into the C API; those wrappers are parked
-in `src/drafts/` for later.
-
 `enzyme.jacobian` can be constructed but no Enzyme pass lowers it yet — the relevant test is marked
 `#[ignore]` until upstream adds a jacobian lowering pass.
