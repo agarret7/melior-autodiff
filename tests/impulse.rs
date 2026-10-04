@@ -21,139 +21,67 @@ use melior_autodiff::{
 };
 use std::sync::Once;
 
-fn differentiate(src: &str) -> String {
+mod filecheck;
+use filecheck::filecheck;
+
+fn read(file: &str) -> String {
+    std::fs::read_to_string(format!("{}/tests/{file}", env!("CARGO_MANIFEST_DIR")))
+        .expect("missing test file")
+}
+
+// Expands and differentiates `src`, then FileChecks the result against the lines in tests/<file>.
+fn differentiate(src: &str, file: &str, prefix: Option<&str>) {
     let ctx = create_context();
     let mut module = Module::parse(&ctx, src).expect("parse failed");
     let pm = PassManager::new(&ctx);
-    pm.add_pass(unsafe { melior::pass::Pass::from_raw_fn(enzymeCreateExpandImpulsePass) });
-    pm.add_pass(unsafe { melior::pass::Pass::from_raw_fn(enzymeCreateOutlineEnzymeFromRegionPass) });
-    pm.add_pass(unsafe { melior::pass::Pass::from_raw_fn(enzymeCreateDifferentiatePass) });
+    unsafe {
+        pm.add_pass(Pass::from_raw_fn(enzymeCreateExpandImpulsePass));
+        pm.add_pass(Pass::from_raw_fn(enzymeCreateOutlineEnzymeFromRegionPass));
+        pm.add_pass(Pass::from_raw_fn(enzymeCreateDifferentiatePass));
+    }
     if pm.run(&mut module).is_err() {
         panic!("differentiation failed:\n{}", module.as_operation());
     }
-    module.as_operation().to_string()
+    filecheck(&module.as_operation().to_string(), file, prefix);
 }
 
-// Reverse-mode wrapper around `@f(%x: $in) -> $out` with an active input and result.
-fn reverse(body: &str, input: &str, output: &str) -> String {
-    differentiate(&format!(
-        r#"
-module {{
-  func.func @f(%x: {input}) -> {output} {{
-{body}
-  }}
-  func.func @df(%x: {input}, %dr: {output}) -> {input} {{
-    %d = enzyme.autodiff @f(%x, %dr) {{
-      activity = [#enzyme<activity enzyme_active>],
-      ret_activity = [#enzyme<activity enzyme_activenoneed>]
-    }} : ({input}, {output}) -> {input}
-    return %d : {input}
-  }}
-}}
-"#
-    ))
-}
-
-fn diffe_body(ir: &str) -> &str {
-    let start = ir.find("@diffef(").expect("no @diffef generated");
-    &ir[start..]
+fn reverse(file: &str) {
+    differentiate(&read(file), file, None);
 }
 
 #[test]
 fn reverse_dynamic_slice() {
-    let ir = reverse(
-        r#"    %i = arith.constant dense<1> : tensor<i64>
-    %y = impulse.dynamic_slice %x, %i {slice_sizes = array<i64: 2>}
-      : (tensor<4xf64>, tensor<i64>) -> tensor<2xf64>
-    return %y : tensor<2xf64>"#,
-        "tensor<4xf64>",
-        "tensor<2xf64>",
-    );
-    assert!(diffe_body(&ir).contains("impulse.dynamic_update_slice"), "{ir}");
+    reverse("mlir/impulse/reverse_dynamic_slice.mlir");
 }
 
 #[test]
 fn reverse_dynamic_update_slice() {
-    let ir = reverse(
-        r#"    %i = arith.constant dense<1> : tensor<i64>
-    %u = arith.constant dense<[7.0, 8.0]> : tensor<2xf64>
-    %y = impulse.dynamic_update_slice %x, %u, %i
-      : (tensor<4xf64>, tensor<2xf64>, tensor<i64>) -> tensor<4xf64>
-    return %y : tensor<4xf64>"#,
-        "tensor<4xf64>",
-        "tensor<4xf64>",
-    );
-    assert!(diffe_body(&ir).contains("impulse.dynamic_update_slice"), "{ir}");
+    reverse("mlir/impulse/reverse_dynamic_update_slice.mlir");
 }
 
 #[test]
 fn reverse_slice() {
-    let ir = reverse(
-        r#"    %y = impulse.slice %x {start_indices = array<i64: 1>, limit_indices = array<i64: 3>,
-                           strides = array<i64: 1>} : (tensor<4xf64>) -> tensor<2xf64>
-    return %y : tensor<2xf64>"#,
-        "tensor<4xf64>",
-        "tensor<2xf64>",
-    );
-    assert!(diffe_body(&ir).contains("impulse.dynamic_update_slice"), "{ir}");
+    reverse("mlir/impulse/reverse_slice.mlir");
 }
 
 #[test]
 fn reverse_reshape() {
-    let ir = reverse(
-        r#"    %y = impulse.reshape %x : (tensor<4xf64>) -> tensor<2x2xf64>
-    return %y : tensor<2x2xf64>"#,
-        "tensor<4xf64>",
-        "tensor<2x2xf64>",
-    );
-    assert!(diffe_body(&ir).contains("impulse.reshape"), "{ir}");
+    reverse("mlir/impulse/reverse_reshape.mlir");
 }
 
 // HMC on a Gaussian: expand-impulse emits enzyme.autodiff_region for ∇logpdf, which must
 // outline and differentiate through impulse.{dynamic_slice, dynamic_update_slice, slice, reshape}.
 #[test]
 fn hmc_gaussian_differentiates() {
-    let ir = differentiate(HMC_GAUSSIAN);
-    assert!(!ir.contains("enzyme.autodiff_region"), "{ir}");
-    assert!(!ir.contains("enzyme.autodiff "), "{ir}");
-    assert!(ir.contains("@diffe"), "{ir}");
+    differentiate(&HMC_RUN.replace("NN", "10"), HMC_FILE, Some("DIFF"));
 }
-
-const HMC_GAUSSIAN: &str = r#"
-module {
-  func.func private @normal(%rng : tensor<2xui64>, %mean : tensor<f64>, %stddev : tensor<f64>) -> (tensor<2xui64>, tensor<f64>) {
-    return %rng, %mean : tensor<2xui64>, tensor<f64>
-  }
-  func.func private @logpdf(%x : tensor<f64>, %mean : tensor<f64>, %stddev : tensor<f64>) -> tensor<f64> {
-    %half = arith.constant dense<-0.5> : tensor<f64>
-    %d = arith.subf %x, %mean : tensor<f64>
-    %z = arith.divf %d, %stddev : tensor<f64>
-    %z2 = arith.mulf %z, %z : tensor<f64>
-    %lp = arith.mulf %half, %z2 : tensor<f64>
-    return %lp : tensor<f64>
-  }
-  func.func @model(%rng : tensor<2xui64>, %mean : tensor<f64>, %stddev : tensor<f64>) -> (tensor<2xui64>, tensor<f64>) {
-    %s:2 = impulse.sample @normal(%rng, %mean, %stddev) { logpdf = @logpdf, symbol = #impulse.symbol<1>, name="s" } : (tensor<2xui64>, tensor<f64>, tensor<f64>) -> (tensor<2xui64>, tensor<f64>)
-    return %s#0, %s#1 : tensor<2xui64>, tensor<f64>
-  }
-  func.func @hmc(%rng : tensor<2xui64>, %mean : tensor<f64>, %stddev : tensor<f64>) -> (tensor<10x1xf64>, tensor<10x2xi1>, tensor<10xf64>, tensor<2xui64>) {
-    %init_trace = arith.constant dense<[[0.0]]> : tensor<1x1xf64>
-    %step_size = arith.constant dense<0.1> : tensor<f64>
-    %res:9 = impulse.infer @model(%rng, %mean, %stddev) given %init_trace
-      step_size = %step_size
-      { hmc_config = #impulse.hmc_config<trajectory_length = 1.0>,
-        name = "hmc", selection = [[#impulse.symbol<1>]], all_addresses = [[#impulse.symbol<1>]], num_warmup = 0, num_samples = 10 }
-      : (tensor<2xui64>, tensor<f64>, tensor<f64>, tensor<1x1xf64>, tensor<f64>) -> (tensor<10x1xf64>, tensor<10x2xi1>, tensor<10xf64>, tensor<2xui64>, tensor<1x1xf64>, tensor<1x1xf64>, tensor<f64>, tensor<f64>, tensor<1x1xf64>)
-    return %res#0, %res#1, %res#2, %res#3 : tensor<10x1xf64>, tensor<10x2xi1>, tensor<10xf64>, tensor<2xui64>
-  }
-}
-"#;
 
 /// Appends textual pipeline elements to `pm`. melior's `parse_pass_pipeline` uses
 /// `mlirParsePassPipeline`, which replaces the passes already in the manager.
 fn add_pipeline(pm: OperationPassManager, elements: &str) {
     unsafe extern "C" fn print_error(message: mlir_sys::MlirStringRef, _: *mut std::ffi::c_void) {
-        let bytes = unsafe { std::slice::from_raw_parts(message.data as *const u8, message.length) };
+        let bytes =
+            unsafe { std::slice::from_raw_parts(message.data as *const u8, message.length) };
         eprint!("{}", String::from_utf8_lossy(bytes));
     }
     let result = unsafe {
@@ -257,42 +185,5 @@ fn hmc_gaussian_samples() {
     assert_ne!(samples, other, "different seeds produced identical chains");
 }
 
-const HMC_RUN: &str = r#"
-module {
-  func.func private @normal(%rng : tensor<2xui64>, %mean : tensor<f64>, %stddev : tensor<f64>) -> (tensor<2xui64>, tensor<f64>) {
-    return %rng, %mean : tensor<2xui64>, tensor<f64>
-  }
-  func.func private @logpdf(%x : tensor<f64>, %mean : tensor<f64>, %stddev : tensor<f64>) -> tensor<f64> {
-    %half = arith.constant dense<-0.5> : tensor<f64>
-    %d = arith.subf %x, %mean : tensor<f64>
-    %z = arith.divf %d, %stddev : tensor<f64>
-    %z2 = arith.mulf %z, %z : tensor<f64>
-    %lp = arith.mulf %half, %z2 : tensor<f64>
-    return %lp : tensor<f64>
-  }
-  func.func private @model(%rng : tensor<2xui64>, %mean : tensor<f64>, %stddev : tensor<f64>) -> (tensor<2xui64>, tensor<f64>) {
-    %s:2 = impulse.sample @normal(%rng, %mean, %stddev) { logpdf = @logpdf, symbol = #impulse.symbol<1>, name="s" } : (tensor<2xui64>, tensor<f64>, tensor<f64>) -> (tensor<2xui64>, tensor<f64>)
-    return %s#0, %s#1 : tensor<2xui64>, tensor<f64>
-  }
-  func.func private @hmc(%rng : tensor<2xui64>, %mean : tensor<f64>, %stddev : tensor<f64>) -> tensor<NNx1xf64> {
-    %init_trace = arith.constant dense<[[0.0]]> : tensor<1x1xf64>
-    %step_size = arith.constant dense<0.1> : tensor<f64>
-    %res:9 = impulse.infer @model(%rng, %mean, %stddev) given %init_trace
-      step_size = %step_size
-      { hmc_config = #impulse.hmc_config<trajectory_length = 1.0>,
-        name = "hmc", selection = [[#impulse.symbol<1>]], all_addresses = [[#impulse.symbol<1>]], num_warmup = 0, num_samples = NN }
-      : (tensor<2xui64>, tensor<f64>, tensor<f64>, tensor<1x1xf64>, tensor<f64>) -> (tensor<NNx1xf64>, tensor<NNx2xi1>, tensor<NNxf64>, tensor<2xui64>, tensor<1x1xf64>, tensor<1x1xf64>, tensor<f64>, tensor<f64>, tensor<1x1xf64>)
-    return %res#0 : tensor<NNx1xf64>
-  }
-  func.func @run(%seed0: i64, %seed1: i64, %mean: f64, %stddev: f64, %out: memref<NNx1xf64>) attributes { llvm.emit_c_interface } {
-    %u0 = builtin.unrealized_conversion_cast %seed0 : i64 to ui64
-    %u1 = builtin.unrealized_conversion_cast %seed1 : i64 to ui64
-    %rng = tensor.from_elements %u0, %u1 : tensor<2xui64>
-    %m = tensor.from_elements %mean : tensor<f64>
-    %sd = tensor.from_elements %stddev : tensor<f64>
-    %samples = func.call @hmc(%rng, %m, %sd) : (tensor<2xui64>, tensor<f64>, tensor<f64>) -> tensor<NNx1xf64>
-    bufferization.materialize_in_destination %samples in writable %out : (tensor<NNx1xf64>, memref<NNx1xf64>) -> ()
-    return
-  }
-}
-"#;
+const HMC_FILE: &str = "mlir/impulse/hmc_gaussian.mlir";
+const HMC_RUN: &str = include_str!("mlir/impulse/hmc_gaussian.mlir");
