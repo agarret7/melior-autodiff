@@ -1,3 +1,4 @@
 [submodule "enzyme"]
 	path = enzyme
-	url = https://github.com/EnzymeAD/Enzyme.git
+	url = https://github.com/agarret7/Enzyme.git
+	branch = llvm23
