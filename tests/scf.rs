@@ -53,57 +53,12 @@ impl MemRef<2> {
     }
 }
 
-const TRACE4_MODULE: &str = r#"
-module {
-  func.func @trace4(%A: memref<4x4xf64>) -> f64
-      attributes { llvm.emit_c_interface } {
-    %c0 = arith.constant 0 : index
-    %c1 = arith.constant 1 : index
-    %c4 = arith.constant 4 : index
-    %z  = arith.constant 0.0 : f64
-    %r  = scf.for %i = %c0 to %c4 step %c1 iter_args(%s = %z) -> f64 {
-      %a  = memref.load %A[%i, %i] : memref<4x4xf64>
-      %s2 = arith.addf %s, %a : f64
-      scf.yield %s2 : f64
-    }
-    return %r : f64
-  }
-  func.func @jvp_trace4(%A: memref<4x4xf64>, %dA: memref<4x4xf64>) -> f64
-      attributes { llvm.emit_c_interface } {
-    %d = enzyme.fwddiff @trace4(%A, %dA) {
-      activity = [#enzyme<activity enzyme_dup>],
-      ret_activity = [#enzyme<activity enzyme_dupnoneed>]
-    } : (memref<4x4xf64>, memref<4x4xf64>) -> f64
-    return %d : f64
-  }
-}
-"#;
+const TRACE4_MODULE: &str = include_str!("mlir/scf/trace4.mlir");
 
 // f(x) = max(0, x).  JVP: dx if x > 0, else 0.
 #[test]
 fn grad_relu() {
-    let engine = compile(r#"
-module {
-  func.func @relu(%x: f64) -> f64 attributes { llvm.emit_c_interface } {
-    %zero = arith.constant 0.0 : f64
-    %cond = arith.cmpf ogt, %x, %zero : f64
-    %result = scf.if %cond -> f64 {
-      scf.yield %x : f64
-    } else {
-      scf.yield %zero : f64
-    }
-    return %result : f64
-  }
-  func.func @jvp_relu(%x: f64, %dx: f64) -> f64 attributes { llvm.emit_c_interface } {
-    %d = enzyme.fwddiff @relu(%x, %dx) {
-      activity = [#enzyme<activity enzyme_dup>],
-      ret_activity = [#enzyme<activity enzyme_dupnoneed>]
-    } : (f64, f64) -> f64
-    return %d : f64
-  }
-}
-"#,
-    );
+    let engine = compile(include_str!("mlir/scf/relu.mlir"));
 
     type JvpFn = unsafe extern "C" fn(f64, f64) -> f64;
     let jvp: JvpFn = unsafe { std::mem::transmute(engine.lookup("_mlir_ciface_jvp_relu")) };
