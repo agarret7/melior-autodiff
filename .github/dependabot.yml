@@ -1,0 +1,12 @@
+version: 2
+updates:
+  # Crates: mlir-sys, bindgen, criterion, and the lockfile revision of the melior git dependency.
+  # The enzyme submodule is not tracked here: its pin moves only when the fork's integration
+  # branch is rebuilt by hand.
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      cargo:
+        patterns: ["*"]
