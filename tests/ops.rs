@@ -12,33 +12,23 @@ use melior_autodiff::{
     fwddiff, jacobian, Activity,
 };
 
-const SQUARE: &str = r#"
-module {
-  func.func @square(%x: f64) -> f64 {
-    %y = arith.mulf %x, %x : f64
-    return %y : f64
-  }
-}
-"#;
+mod filecheck;
+use filecheck::filecheck;
 
-const SQUARE_TENSOR: &str = r#"
-module {
-  func.func @square_tensor(%x: tensor<2xf64>) -> tensor<2xf64> {
-    %y = arith.mulf %x, %x : tensor<2xf64>
-    return %y : tensor<2xf64>
-  }
-}
-"#;
+const SQUARE: &str = "mlir/ops/square.mlir";
+const SQUARE_TENSOR: &str = "mlir/ops/square_tensor.mlir";
 
-// Parses `src` and appends `func.func @caller` whose body is the single op built by `build`.
+// Parses tests/<file> and appends `func.func @caller` whose body is the single op built by `build`.
 fn with_caller<'c>(
     ctx: &'c Context,
-    src: &str,
+    file: &str,
     arg_types: &[Type<'c>],
     result_types: &[Type<'c>],
     build: impl FnOnce(&[Value<'c, '_>]) -> Operation<'c>,
 ) -> Module<'c> {
-    let module = Module::parse(ctx, src).expect("parse failed");
+    let src = std::fs::read_to_string(format!("{}/tests/{file}", env!("CARGO_MANIFEST_DIR")))
+        .expect("missing test file");
+    let module = Module::parse(ctx, &src).expect("parse failed");
     let loc = Location::unknown(ctx);
     let block = Block::new(&arg_types.iter().map(|&t| (t, loc)).collect::<Vec<_>>());
     {
@@ -114,9 +104,7 @@ fn autodiff_op() {
         )
     });
     let text = module.as_operation().to_string();
-    assert!(text.contains("enzyme.autodiff @square(%arg0, %arg1)"), "got:\n{text}");
-    assert!(text.contains("activity = [#enzyme<activity enzyme_active>]"), "got:\n{text}");
-    assert!(text.contains("ret_activity = [#enzyme<activity enzyme_activenoneed>]"), "got:\n{text}");
+    filecheck(&text, SQUARE, Some("AUTODIFF"));
 }
 
 #[test]
@@ -137,9 +125,7 @@ fn fwddiff_op() {
         )
     });
     let text = module.as_operation().to_string();
-    assert!(text.contains("enzyme.fwddiff @square(%arg0, %arg1)"), "got:\n{text}");
-    assert!(text.contains("activity = [#enzyme<activity enzyme_dup>]"), "got:\n{text}");
-    assert!(text.contains("ret_activity = [#enzyme<activity enzyme_dupnoneed>]"), "got:\n{text}");
+    filecheck(&text, SQUARE, Some("FWDDIFF"));
 }
 
 #[test]
@@ -160,9 +146,7 @@ fn jacobian_op() {
         )
     });
     let text = module.as_operation().to_string();
-    assert!(text.contains("enzyme.jacobian @square(%arg0, %arg1)"), "got:\n{text}");
-    assert!(text.contains("width = 2"), "got:\n{text}");
-    assert!(text.contains("strong_zero = true"), "got:\n{text}");
+    filecheck(&text, SQUARE, Some("JACOBIAN"));
 }
 
 #[test]
@@ -170,11 +154,17 @@ fn batch_op() {
     let ctx = create_context();
     let tensor_ty = Type::parse(&ctx, "tensor<4xf64>").unwrap();
     let module = with_caller(&ctx, SQUARE, &[tensor_ty], &[tensor_ty], |args| {
-        batch(&ctx, "square", args, &[tensor_ty], &[4], Location::unknown(&ctx))
+        batch(
+            &ctx,
+            "square",
+            args,
+            &[tensor_ty],
+            &[4],
+            Location::unknown(&ctx),
+        )
     });
     let text = module.as_operation().to_string();
-    assert!(text.contains("enzyme.batch @square(%arg0)"), "got:\n{text}");
-    assert!(text.contains("batch_shape = array<i64: 4>"), "got:\n{text}");
+    filecheck(&text, SQUARE, Some("BATCH"));
 }
 
 // ── Differentiate pass ────────────────────────────────────────────────────────
@@ -197,31 +187,34 @@ fn differentiate_pass_lowers_autodiff() {
         )
     });
     let text = differentiate(&ctx, &mut module);
-    assert!(!text.contains("enzyme.autodiff"), "enzyme.autodiff was not lowered");
-    assert!(text.contains("call @diffesquare(%arg0, %arg1) : (f64, f64) -> f64"));
-    assert!(text.contains("func.func private @diffesquare(%arg0: f64, %arg1: f64) -> f64"));
+    filecheck(&text, SQUARE, Some("LOWERED"));
 }
 
 #[test]
 fn differentiate_pass_lowers_tensor_autodiff() {
     let ctx = create_context();
     let tensor_ty = Type::parse(&ctx, "tensor<2xf64>").unwrap();
-    let mut module = with_caller(&ctx, SQUARE_TENSOR, &[tensor_ty, tensor_ty], &[tensor_ty], |args| {
-        autodiff(
-            &ctx,
-            "square_tensor",
-            args,
-            &[tensor_ty],
-            &[Activity::Active],
-            &[Activity::ActiveNoNeed],
-            1,
-            false,
-            Location::unknown(&ctx),
-        )
-    });
+    let mut module = with_caller(
+        &ctx,
+        SQUARE_TENSOR,
+        &[tensor_ty, tensor_ty],
+        &[tensor_ty],
+        |args| {
+            autodiff(
+                &ctx,
+                "square_tensor",
+                args,
+                &[tensor_ty],
+                &[Activity::Active],
+                &[Activity::ActiveNoNeed],
+                1,
+                false,
+                Location::unknown(&ctx),
+            )
+        },
+    );
     let text = differentiate(&ctx, &mut module);
-    assert!(!text.contains("enzyme.autodiff"), "enzyme.autodiff was not lowered");
-    assert!(text.contains("!enzyme.Gradient<tensor<2xf64>>"));
+    filecheck(&text, SQUARE_TENSOR, None);
 }
 
 // enzyme.jacobian op exists in the dialect but no pass currently lowers it.
@@ -244,5 +237,5 @@ fn differentiate_pass_lowers_jacobian() {
         )
     });
     let text = differentiate(&ctx, &mut module);
-    assert!(!text.contains("enzyme.jacobian"), "enzyme.jacobian was not lowered");
+    filecheck(&text, SQUARE, Some("JACOBIAN_LOWERED"));
 }
