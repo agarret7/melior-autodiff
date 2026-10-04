@@ -18,6 +18,11 @@ use mlir_sys::{
     MlirAttribute, MlirContext, MlirLocation, MlirOperation, MlirStringRef, MlirType, MlirValue,
 };
 
+mod impulse;
+mod lower;
+pub use impulse::create_lower_impulse_pass;
+pub use lower::create_lower_enzyme_helpers_pass;
+
 mod sys {
     #![allow(
         non_upper_case_globals,
@@ -33,6 +38,7 @@ mod sys {
 pub use sys::{
     enzymeCreateBatchDiffPass, enzymeCreateBatchPass, enzymeCreateConvertEnzymeToMemRefPass,
     enzymeCreateDifferentiatePass, enzymeCreateDifferentiatePassWithOptions,
+    enzymeCreateExpandImpulsePass, enzymeCreateOutlineEnzymeFromRegionPass,
     enzymeCreateRemoveUnusedEnzymeOpsPass,
 };
 
@@ -42,10 +48,15 @@ pub fn register_dialect_extensions(registry: &DialectRegistry) {
     unsafe { sys::enzymeRegisterDialectExtensions(registry.to_raw()) }
 }
 
+/// Loads the Enzyme and Impulse dialects into `context`.
 pub fn load_dialect(context: &Context) {
     unsafe {
         mlir_sys::mlirDialectHandleLoadDialect(
             sys::mlirGetDialectHandle__enzyme__(),
+            context.to_raw(),
+        );
+        mlir_sys::mlirDialectHandleLoadDialect(
+            sys::mlirGetDialectHandle__impulse__(),
             context.to_raw(),
         );
     }

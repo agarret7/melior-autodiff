@@ -9,7 +9,7 @@ description = "Automatic differentiation as a Melior pass"
 license = "Apache-2.0"
 
 [dependencies]
-melior = { git = "https://github.com/agarret7/melior", branch = "main" }
+melior = { git = "https://github.com/agarret7/melior", branch = "main", features = ["ods-dialects"] }
 mlir-sys = "230.0.1"
 
 [build-dependencies]
