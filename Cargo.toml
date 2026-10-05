@@ -13,10 +13,10 @@ melior = { git = "https://github.com/agarret7/melior", branch = "main" }
 mlir-sys = "230.0.1"
 
 [build-dependencies]
-bindgen = "0.70"
+bindgen = "0.73"
 
 [dev-dependencies]
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { version = "0.8", features = ["html_reports"] }
 
 [[bench]]
 name = "gradient"
