@@ -8,8 +8,7 @@ use melior::ir::{
 use melior::pass::PassManager;
 use melior::Context;
 use melior_autodiff::{
-    activity_array_attribute, autodiff, batch, create_context, enzymeCreateDifferentiatePass,
-    fwddiff, jacobian, Activity,
+    activity_array_attribute, autodiff, batch, create_context, fwddiff, jacobian, pass, Activity,
 };
 
 mod filecheck;
@@ -57,7 +56,7 @@ fn with_caller<'c>(
 
 fn differentiate(ctx: &Context, module: &mut Module) -> String {
     let pm = PassManager::new(ctx);
-    pm.add_pass(unsafe { melior::pass::Pass::from_raw_fn(enzymeCreateDifferentiatePass) });
+    pm.add_pass(pass::create_differentiate_pass());
     pm.run(module).expect("differentiate pass failed");
     module.as_operation().to_string()
 }

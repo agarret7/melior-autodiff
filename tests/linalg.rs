@@ -1,6 +1,6 @@
 use melior::ir::Module;
 use melior::pass::PassManager;
-use melior_autodiff::{create_context, enzymeCreateDifferentiatePass};
+use melior_autodiff::{create_context, pass};
 
 mod filecheck;
 use filecheck::filecheck;
@@ -12,7 +12,7 @@ fn differentiate(file: &str) {
     let ctx = create_context();
     let mut module = Module::parse(&ctx, &src).expect("parse failed");
     let pm = PassManager::new(&ctx);
-    pm.add_pass(unsafe { melior::pass::Pass::from_raw_fn(enzymeCreateDifferentiatePass) });
+    pm.add_pass(pass::create_differentiate_pass());
     pm.run(&mut module).expect("differentiate pass failed");
     filecheck(&module.as_operation().to_string(), file, None);
 }

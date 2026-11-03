@@ -7,13 +7,11 @@ use melior::pass::transform::{
 };
 use melior::pass::PassManager;
 use melior::{ir::Module, ExecutionEngine};
-use melior_autodiff::{
-    create_context, enzymeCreateConvertEnzymeToMemRefPass, enzymeCreateDifferentiatePass,
-};
+use melior_autodiff::{create_context, pass};
 
 fn add_lowering_passes(pm: &PassManager<'_>) {
-    pm.add_pass(unsafe { melior::pass::Pass::from_raw_fn(enzymeCreateDifferentiatePass) });
-    pm.add_pass(unsafe { melior::pass::Pass::from_raw_fn(enzymeCreateConvertEnzymeToMemRefPass) });
+    pm.add_pass(pass::create_differentiate_pass());
+    pm.add_pass(pass::create_convert_enzyme_to_memref_pass());
     pm.add_pass(create_inliner_pass());
     pm.add_pass(create_canonicalizer_pass());
     pm.add_pass(create_cse_pass());

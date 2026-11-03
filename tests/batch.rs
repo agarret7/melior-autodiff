@@ -1,9 +1,6 @@
 use melior::ir::{Location, Module};
 use melior::pass::PassManager;
-use melior_autodiff::{
-    create_context, enzymeCreateBatchDiffPass, enzymeCreateBatchPass,
-    enzymeCreateRemoveUnusedEnzymeOpsPass,
-};
+use melior_autodiff::{create_context, pass};
 
 mod filecheck;
 use filecheck::filecheck;
@@ -17,7 +14,7 @@ fn batch_pass_lowers_batch_op() {
         .expect("failed to parse batch test module");
 
     let pm = PassManager::new(&ctx);
-    pm.add_pass(unsafe { melior::pass::Pass::from_raw_fn(enzymeCreateBatchPass) });
+    pm.add_pass(pass::create_batch_pass());
     pm.run(&mut module).expect("enzyme-batch pass failed");
 
     filecheck(&module.as_operation().to_string(), "mlir/batch/square.mlir", None);
@@ -30,9 +27,9 @@ fn batch_and_cleanup_passes_are_runnable() {
     let ctx = create_context();
     let mut module = Module::new(Location::unknown(&ctx));
     let pm = PassManager::new(&ctx);
-    pm.add_pass(unsafe { melior::pass::Pass::from_raw_fn(enzymeCreateBatchPass) });
-    pm.add_pass(unsafe { melior::pass::Pass::from_raw_fn(enzymeCreateBatchDiffPass) });
-    pm.add_pass(unsafe { melior::pass::Pass::from_raw_fn(enzymeCreateRemoveUnusedEnzymeOpsPass) });
+    pm.add_pass(pass::create_batch_pass());
+    pm.add_pass(pass::create_batch_diff_pass());
+    pm.add_pass(pass::create_remove_unnecessary_enzyme_ops_pass());
     pm.run(&mut module)
         .expect("batch and cleanup passes should run on an empty module");
 }

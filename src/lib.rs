@@ -19,7 +19,7 @@ use mlir_sys::{
 };
 
 mod lower;
-pub use lower::create_lower_enzyme_helpers_pass;
+pub mod pass;
 
 mod sys {
     #![allow(
@@ -32,12 +32,6 @@ mod sys {
 
     include!(concat!(env!("OUT_DIR"), "/enzyme_bindings.rs"));
 }
-
-pub use sys::{
-    enzymeCreateBatchDiffPass, enzymeCreateBatchPass, enzymeCreateConvertEnzymeToMemRefPass,
-    enzymeCreateDifferentiatePass, enzymeCreateDifferentiatePassWithOptions,
-    enzymeCreateRemoveUnusedEnzymeOpsPass,
-};
 
 /// Registers Enzyme's AD interface models for upstream dialects (arith, func, scf, ...).
 /// Must run before the registry is used to create a context.

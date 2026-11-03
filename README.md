@@ -15,9 +15,9 @@ The C API it binds is upstream in Enzyme as of
 |---|---|
 | **Dialect setup** | `create_context()`, or `register_dialect_extensions` + `load_dialect` for a custom registry |
 | **Op construction** | Safe builders `autodiff`, `fwddiff`, `jacobian`, `batch` over Enzyme's C op constructors; `activity_attribute` / `activity_array_attribute` |
-| **Pass construction** | `enzymeCreateDifferentiatePass`, `enzymeCreateConvertEnzymeToMemRefPass`, `enzymeCreateBatchPass`, `enzymeCreateBatchDiffPass`, `enzymeCreateRemoveUnusedEnzymeOpsPass` |
+| **Passes** | `pass::create_differentiate_pass`, `create_convert_enzyme_to_memref_pass`, `create_batch_pass`, `create_batch_diff_pass`, `create_remove_unnecessary_enzyme_ops_pass`, as melior `Pass`es |
 | **Passes by name** | `register_passes()` registers every Enzyme pass, so a textual pipeline can name any of them (`enzyme`, `simplify-memref-cache`, `add-to-op-to-split`, ...) |
-| **Lowerings** | `create_lower_enzyme_helpers_pass` (`enzyme.fill_zero`, `enzyme.broadcast`), for ops Enzyme emits but doesn't lower to upstream MLIR |
+| **Lowerings** | `pass::create_lower_enzyme_helpers_pass` (`enzyme.fill_zero`, `enzyme.broadcast`), for ops Enzyme emits but doesn't lower to upstream MLIR |
 | **Benchmarks** | Criterion suite measuring compile latency (~6–9 ms), `invoke_packed` overhead (~750 ns), and direct call cost (~2 ns) |
 
 ## Quick example
@@ -28,8 +28,9 @@ let ctx = create_context();
 let mut module = Module::parse(&ctx, MLIR_SOURCE).unwrap();
 
 let pm = PassManager::new(&ctx);
-pm.add_pass(Pass::from_raw_fn(enzymeCreateDifferentiatePass));
-pm.add_pass(Pass::from_raw_fn(enzymeCreateConvertEnzymeToMemRefPass));
+pm.add_pass(pass::create_differentiate_pass());
+pm.add_pass(pass::create_lower_enzyme_helpers_pass());
+pm.add_pass(pass::create_convert_enzyme_to_memref_pass());
 pm.add_pass(create_inliner_pass());
 pm.add_pass(create_canonicalizer_pass());
 pm.add_pass(create_scf_to_control_flow());

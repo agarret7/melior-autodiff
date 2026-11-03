@@ -11,18 +11,15 @@ use melior::pass::transform::{
 };
 use melior::pass::PassManager;
 use melior::ExecutionEngine;
-use melior_autodiff::{
-    create_context, create_lower_enzyme_helpers_pass, enzymeCreateConvertEnzymeToMemRefPass,
-    enzymeCreateDifferentiatePass,
-};
+use melior_autodiff::{create_context, pass};
 
 fn compile(src: &str) -> ExecutionEngine {
     let ctx = create_context();
     let mut module = Module::parse(&ctx, src).expect("parse failed");
     let pm = PassManager::new(&ctx);
-    pm.add_pass(unsafe { melior::pass::Pass::from_raw_fn(enzymeCreateDifferentiatePass) });
-    pm.add_pass(create_lower_enzyme_helpers_pass());
-    pm.add_pass(unsafe { melior::pass::Pass::from_raw_fn(enzymeCreateConvertEnzymeToMemRefPass) });
+    pm.add_pass(pass::create_differentiate_pass());
+    pm.add_pass(pass::create_lower_enzyme_helpers_pass());
+    pm.add_pass(pass::create_convert_enzyme_to_memref_pass());
     pm.add_pass(create_inliner_pass());
     pm.add_pass(create_canonicalizer_pass());
     pm.add_pass(create_cse_pass());
