@@ -70,42 +70,18 @@ func.func private @dsquare(%arg0: f64, %arg1: f64) -> f64 {
 }
 ```
 
-- **The activities** say how Enzyme treats each argument and result of `@square`. `%x` is
-  `Active`, so `@dsquare` returns its derivative. The result is `Active` too, so `@dsquare` takes a
-  seed, the incoming gradient: `%arg1`, or `dr`.
-- **`DerivativeMode`** picks what to generate: `ReverseModeCombined` is ordinary reverse mode, and
-  `ForwardMode` generates a function from tangents to tangents.
-- **The passes.** `enzyme-wrap` generates `@dsquare` with gradient slots and a tape of cached values.
-  `remove-unnecessary-enzyme-ops`, after a canonicalize, removes those where they aren't needed, and
-  `enzyme-simplify-math` folds away the arithmetic they leave behind.
+Each argument and result has an *activity*, which tells Enzyme what to differentiate:
 
-From here it's ordinary MLIR, to lower and JIT-compile with melior; `@dsquare` is private, so make it
-public first to call it. Where Enzyme ops remain, as caches inside loops do, run
-`lower-enzyme-helpers` and then `convert-enzyme-to-memref` first. The [tests](tests/arith.rs) have the
-full pipeline.
+- `Active`: a value whose derivative is returned, like the `f64` here.
+- `Dup`: an argument passed together with a "shadow". In reverse mode, for a memref, the shadow is
+  the buffer its gradient accumulates into; in forward mode, it's the argument's tangent.
+- `Const`: not differentiated.
 
-To differentiate at a particular call site instead, write an `enzyme.autodiff` or `enzyme.fwddiff`
-op there (or build one with `autodiff` and `fwddiff`), and run `create_differentiate_pass`, which
-replaces each with a call to the derivative it generates.
-
-The other activities: `Dup` passes a shadow alongside the argument, as the next argument. In forward
-mode the shadow is the argument's tangent; in reverse mode, for a memref, it's the buffer the gradient
-accumulates into. `Const` means no derivative.
-
-## What works
-
-| | Scalars | `scf` control flow | Memrefs | Tensors |
-|---|---|---|---|---|
-| Reverse mode (`enzyme.autodiff`) | ✓ | | ✓ | ✓ (checked to differentiate, not run) |
-| Forward mode (`enzyme.fwddiff`) | ✓ | ✓ | ✓ | ✓, including `width > 1` |
-| `linalg.generic`, forward | | | | ✓ (checked to differentiate, not run) |
-| `linalg.generic`, reverse | | | ✗ gradient is silently zero | ✗ unsupported by Enzyme |
-| `enzyme.batch` | | | | ✓ a scalar function mapped over a tensor (checked to lower, not run) |
-| `enzyme.jacobian` | ✗ builds, but nothing lowers it | | | |
-
-Each ✓ is a test in [`tests/`](tests), and the memref `linalg.generic` and `enzyme.jacobian` ✗s
-are ignored tests, to turn on once Enzyme handles them. Reverse-mode `linalg.generic` on memrefs
-already works on this crate's `impulse` branch, which builds against an Enzyme branch with the fix.
+Here both `%x` and the result are `Active`, so `@dsquare(x, dr)` takes the incoming gradient `dr`
+and returns `2x * dr`; pass `dr = 1.0` for the plain derivative. The passes after `enzyme-wrap`
+clean up the bookkeeping Enzyme generates. Enzyme's
+[calling convention](https://enzyme.mit.edu/getting_started/CallingConvention/) documents activities
+in full, for its LLVM interface, where an `Active` argument is marked `enzyme_out`.
 
 ## What's here
 
@@ -113,7 +89,7 @@ already works on this crate's `impulse` branch, which builds against an Enzyme b
 |---|---|
 | `melior_autodiff` | The Enzyme dialect: `dialect_handle()`, a melior `DialectHandle`; `autodiff`, `fwddiff` and `jacobian`, taking a function name and `&[Activity]`; and `activity_attribute` / `activity_array_attribute` |
 | `melior_autodiff::ods` | Every Enzyme op, generated from its TableGen definition the way melior generates upstream dialects: builders, typed ops and accessors |
-| `melior_autodiff::pass` | `create_*_pass` for each Enzyme pass with a C API constructor, and `create_lower_enzyme_helpers_pass` for the ops Enzyme emits but doesn't lower to upstream MLIR. `add_differentiate_wrapper_pass` (with `DerivativeMode`) and `add_mathematic_simplification_pass` append `enzyme-wrap` and `enzyme-simplify-math`, which have no C API constructors |
+| `melior_autodiff::pass` | `create_differentiate_pass`, which replaces each `enzyme.autodiff` and `enzyme.fwddiff` with a call to the derivative it generates. `add_differentiate_wrapper_pass` (with `DerivativeMode`) generates the derivative of a named function instead, with no op in the source, as in the example. The rest of Enzyme's passes are `create_*_pass` or `add_*_pass`. `create_lower_fill_zero_pass` and `create_lower_broadcast_pass` are this crate's own, for two ops Enzyme can generate but has no pass to lower |
 | `melior_autodiff::utility` | `create_context()`, a context with every upstream dialect and Enzyme's; `register_dialect_extensions` for building your own registry; and `register_passes()`, so a textual pipeline can name any Enzyme pass (`enzyme`, `simplify-memref-cache`, ...) |
 
 ## Build
