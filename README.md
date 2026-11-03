@@ -1,10 +1,13 @@
 # melior-autodiff
 
-Rust/[Melior](https://github.com/mlir-rs/melior) bindings for [Enzyme](https://github.com/EnzymeAD/Enzyme)'s MLIR C API.
+Unofficial Rust/[Melior](https://github.com/mlir-rs/melior) bindings for [Enzyme](https://github.com/EnzymeAD/Enzyme)'s MLIR C API.
 
 Enzyme's MLIR integration exposes automatic differentiation as a dialect pass over MLIR IR. This crate
 wraps the C API via bindgen and provides a thin Rust layer for registering Enzyme, running the
 differentiation pipeline, and calling JIT-compiled gradients with near-zero overhead.
+
+The C API it binds is upstream in Enzyme as of
+[EnzymeAD/Enzyme#2859](https://github.com/EnzymeAD/Enzyme/pull/2859).
 
 ## What's here
 
@@ -13,6 +16,8 @@ differentiation pipeline, and calling JIT-compiled gradients with near-zero over
 | **Dialect setup** | `create_context()`, or `register_dialect_extensions` + `load_dialect` for a custom registry |
 | **Op construction** | Safe builders `autodiff`, `fwddiff`, `jacobian`, `batch` over Enzyme's C op constructors; `activity_attribute` / `activity_array_attribute` |
 | **Pass construction** | `enzymeCreateDifferentiatePass`, `enzymeCreateConvertEnzymeToMemRefPass`, `enzymeCreateBatchPass`, `enzymeCreateBatchDiffPass`, `enzymeCreateRemoveUnusedEnzymeOpsPass` |
+| **Passes by name** | `register_passes()` registers every Enzyme pass, so a textual pipeline can name any of them (`enzyme`, `simplify-memref-cache`, `add-to-op-to-split`, ...) |
+| **Lowerings** | `create_lower_enzyme_helpers_pass` (`enzyme.fill_zero`, `enzyme.broadcast`), for ops Enzyme emits but doesn't lower to upstream MLIR |
 | **JIT utilities** | `lookup_jit_fn!` — look up a compiled function by name and return a `Box<dyn Fn(...)>`, transmute isolated to construction |
 | **Benchmarks** | Criterion suite measuring compile latency (~6–9 ms), `invoke_packed` overhead (~750 ns), and raw/boxed call cost (~2 ns) |
 
@@ -41,6 +46,10 @@ let result = grad(3.0, 1.0); // 6.0 for d/dx x^2
 ## Build
 
 Requires LLVM/MLIR 23 and the Enzyme submodule built against it.
+
+The submodule tracks Enzyme's upstream `main` plus one small commit (the `llvm23` branch) that keeps
+it building against LLVM 23. Upstream targets LLVM 24, so the commit goes away once `mlir-sys`
+supports LLVM 24. The `impulse` branch of this crate adds bindings for Enzyme's Impulse dialect on top.
 
 ```sh
 git clone --recurse-submodules https://github.com/agarret7/melior-autodiff
@@ -76,5 +85,5 @@ it entirely — use it for any inner loop (e.g. HMC leapfrog steps).
 
 ## Enzyme dialect boundary
 
-`enzyme.jacobian` can be constructed but no Enzyme pass lowers it yet — the relevant test is marked
-`#[ignore]` until upstream adds a jacobian lowering pass.
+`enzyme.jacobian` can be constructed but no Enzyme pass lowers it yet. Its test is marked
+`#[ignore]` until upstream adds a lowering for it.
