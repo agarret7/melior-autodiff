@@ -62,6 +62,14 @@ pub fn load_dialect(context: &Context) {
     }
 }
 
+/// Registers Enzyme's passes with MLIR's global registry, so a textual pass
+/// pipeline can name them (`enzyme`, `add-to-op-to-split`, ...). Safe to call
+/// more than once.
+pub fn register_passes() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| unsafe { sys::enzymeRegisterPasses() });
+}
+
 /// A context with all upstream MLIR dialects and the Enzyme dialect loaded.
 pub fn create_context() -> Context {
     let registry = DialectRegistry::new();
