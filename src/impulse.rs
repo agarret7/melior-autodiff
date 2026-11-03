@@ -29,7 +29,8 @@ static LOWER_IMPULSE: PassId = PassId;
 pub fn create_lower_impulse_pass() -> Pass {
     create_external(
         |op: OperationRef, pass: ExternalPass| {
-            let ctx = unsafe { op.context().to_ref() };
+            let context = op.context();
+            let ctx = unsafe { context.to_ref() };
             let patterns = RewritePatternSet::new(ctx);
             patterns.add(pattern(ctx, "impulse.select", lower_select));
             patterns.add(pattern(ctx, "impulse.reshape", lower_reshape));
@@ -76,7 +77,8 @@ fn pattern(ctx: &Context, root: &str, lower: Lowering) -> RewritePattern {
             let op = unsafe { OperationRef::from_raw(op) };
             let rewriter = unsafe { PatternRewriter::from_raw(rewriter) };
             let rewriter = rewriter.as_rewriter_base();
-            let ctx = unsafe { op.context().to_ref() };
+            let context = op.context();
+            let ctx = unsafe { context.to_ref() };
             rewriter.set_insertion_point_before(op);
             lower(ctx, op, &rewriter)
         },

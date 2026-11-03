@@ -23,7 +23,8 @@ static LOWER_ENZYME_HELPERS: PassId = PassId;
 pub fn create_lower_enzyme_helpers_pass() -> Pass {
     create_external(
         |op: OperationRef, pass: ExternalPass| {
-            let ctx = unsafe { op.context().to_ref() };
+            let context = op.context();
+            let ctx = unsafe { context.to_ref() };
             let patterns = RewritePatternSet::new(ctx);
             patterns.add(fill_zero_pattern(ctx));
             patterns.add(broadcast_pattern(ctx));
@@ -56,7 +57,8 @@ fn fill_zero_pattern(ctx: &Context) -> RewritePattern {
             let op = unsafe { OperationRef::from_raw(op) };
             let rewriter = unsafe { PatternRewriter::from_raw(rewriter) };
             let rewriter = rewriter.as_rewriter_base();
-            let ctx = unsafe { op.context().to_ref() };
+            let context = op.context();
+            let ctx = unsafe { context.to_ref() };
             let loc = op.location();
 
             let memref = op.operand(0).unwrap();
@@ -89,7 +91,8 @@ fn broadcast_pattern(ctx: &Context) -> RewritePattern {
             let op = unsafe { OperationRef::from_raw(op) };
             let rewriter = unsafe { PatternRewriter::from_raw(rewriter) };
             let rewriter = rewriter.as_rewriter_base();
-            let ctx = unsafe { op.context().to_ref() };
+            let context = op.context();
+            let ctx = unsafe { context.to_ref() };
 
             let loc = op.location();
             let input = op.operand(0).unwrap();
