@@ -8,7 +8,8 @@ use melior::ir::{
 use melior::pass::PassManager;
 use melior::Context;
 use melior_autodiff::{
-    activity_array_attribute, autodiff, create_context, fwddiff, jacobian, ods, pass, Activity,
+    activity_array_attribute, autodiff, fwddiff, jacobian, ods, pass, utility::create_context,
+    Activity,
 };
 
 mod filecheck;

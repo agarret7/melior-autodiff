@@ -6,19 +6,19 @@
 //! should use from Rust.
 
 use melior::{
-    dialect::{DialectHandle, DialectRegistry},
+    dialect::DialectHandle,
     ir::{
         attribute::{ArrayAttribute, BoolAttribute, FlatSymbolRefAttribute, IntegerAttribute},
         r#type::IntegerType,
         Attribute, Location, Operation, Type, Value,
     },
-    utility::register_all_dialects,
     Context,
 };
 
 mod lower;
 pub mod ods;
 pub mod pass;
+pub mod utility;
 
 mod sys {
     #![allow(
@@ -32,34 +32,9 @@ mod sys {
     include!(concat!(env!("OUT_DIR"), "/enzyme_bindings.rs"));
 }
 
-/// Registers Enzyme's AD interface models for upstream dialects (arith, func, scf, ...).
-/// Must run before the registry is used to create a context.
-pub fn register_dialect_extensions(registry: &DialectRegistry) {
-    unsafe { sys::enzymeRegisterDialectExtensions(registry.to_raw()) }
-}
-
 /// The Enzyme dialect, to insert into a `DialectRegistry` or load into a `Context`.
 pub fn dialect_handle() -> DialectHandle {
     unsafe { DialectHandle::from_raw(sys::mlirGetDialectHandle__enzyme__()) }
-}
-
-/// Registers Enzyme's passes with MLIR's global registry, so a textual pass
-/// pipeline can name them (`enzyme`, `add-to-op-to-split`, ...). Safe to call
-/// more than once.
-pub fn register_passes() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| unsafe { sys::enzymeRegisterPasses() });
-}
-
-/// A context with all upstream MLIR dialects and the Enzyme dialect loaded.
-pub fn create_context() -> Context {
-    let registry = DialectRegistry::new();
-    register_all_dialects(&registry);
-    dialect_handle().insert_dialect(&registry);
-    register_dialect_extensions(&registry);
-    let context = Context::new_with_registry(&registry, false);
-    context.load_all_available_dialects();
-    context
 }
 
 #[repr(u32)]

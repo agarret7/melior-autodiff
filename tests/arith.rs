@@ -7,7 +7,7 @@ use melior::pass::transform::{
 };
 use melior::pass::PassManager;
 use melior::ExecutionEngine;
-use melior_autodiff::{create_context, pass};
+use melior_autodiff::{pass, utility::create_context};
 
 fn compile(src: &str) -> ExecutionEngine {
     let ctx = create_context();

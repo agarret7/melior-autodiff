@@ -1,6 +1,6 @@
 use melior::ir::{Location, Module};
 use melior::pass::PassManager;
-use melior_autodiff::{create_context, pass};
+use melior_autodiff::{pass, utility::create_context};
 
 mod filecheck;
 use filecheck::filecheck;

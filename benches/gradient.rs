@@ -7,7 +7,7 @@ use melior::pass::transform::{
 };
 use melior::pass::PassManager;
 use melior::{ir::Module, ExecutionEngine};
-use melior_autodiff::{create_context, pass};
+use melior_autodiff::{pass, utility::create_context};
 
 fn add_lowering_passes(pm: &PassManager<'_>) {
     pm.add_pass(pass::create_differentiate_pass());
