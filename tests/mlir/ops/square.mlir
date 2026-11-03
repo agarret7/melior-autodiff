@@ -9,19 +9,19 @@ module {
 
 // AUTODIFF-LABEL: func.func @caller(
 // AUTODIFF-SAME:          %[[X:[a-z0-9_]+]]: f64, %[[DR:[a-z0-9_]+]]: f64) -> f64
-// AUTODIFF-NEXT:    enzyme.autodiff @square(%[[X]], %[[DR]]) {activity = [#enzyme<activity enzyme_active>], ret_activity = [#enzyme<activity enzyme_activenoneed>]} : (f64, f64) -> f64
+// AUTODIFF-NEXT:    enzyme.autodiff @square(%[[X]], %[[DR]]) <{activity = [#enzyme<activity enzyme_active>], ret_activity = [#enzyme<activity enzyme_activenoneed>]}> : (f64, f64) -> f64
 
 // FWDDIFF-LABEL: func.func @caller(
 // FWDDIFF-SAME:         %[[X:[a-z0-9_]+]]: f64, %[[DX:[a-z0-9_]+]]: f64) -> f64
-// FWDDIFF-NEXT:    enzyme.fwddiff @square(%[[X]], %[[DX]]) {activity = [#enzyme<activity enzyme_dup>], ret_activity = [#enzyme<activity enzyme_dupnoneed>]} : (f64, f64) -> f64
+// FWDDIFF-NEXT:    enzyme.fwddiff @square(%[[X]], %[[DX]]) <{activity = [#enzyme<activity enzyme_dup>], ret_activity = [#enzyme<activity enzyme_dupnoneed>]}> : (f64, f64) -> f64
 
 // JACOBIAN-LABEL: func.func @caller(
 // JACOBIAN-SAME:          %[[X:[a-z0-9_]+]]: f64, %[[DX:[a-z0-9_]+]]: f64) -> f64
-// JACOBIAN-NEXT:    enzyme.jacobian @square(%[[X]], %[[DX]]) {activity = [#enzyme<activity enzyme_dup>], ret_activity = [#enzyme<activity enzyme_dupnoneed>], strong_zero = true, width = 2 : i64} : (f64, f64) -> f64
+// JACOBIAN-NEXT:    enzyme.jacobian @square(%[[X]], %[[DX]]) <{activity = [#enzyme<activity enzyme_dup>], ret_activity = [#enzyme<activity enzyme_dupnoneed>], strong_zero = true, width = 2 : i64}> : (f64, f64) -> f64
 
 // BATCH-LABEL: func.func @caller(
 // BATCH-SAME:       %[[X:[a-z0-9_]+]]: tensor<4xf64>) -> tensor<4xf64>
-// BATCH-NEXT:    enzyme.batch @square(%[[X]]) {batch_shape = array<i64: 4>} : (tensor<4xf64>) -> tensor<4xf64>
+// BATCH-NEXT:    enzyme.batch @square(%[[X]]) <{batch_shape = array<i64: 4>}> : (tensor<4xf64>) -> tensor<4xf64>
 
 // Reverse mode of x²: x is cached twice and each copy is scaled by the same incoming gradient.
 // LOWERED-LABEL: func.func @caller(

@@ -14,10 +14,10 @@ module {
     return %result : tensor<f64>
   }
   func.func @jvp_trace4(%A: tensor<4x4xf64>, %dA: tensor<4x4xf64>) -> tensor<f64> {
-    %d = enzyme.fwddiff @trace4_tensor(%A, %dA) {
+    %d = enzyme.fwddiff @trace4_tensor(%A, %dA) <{
       activity = [#enzyme<activity enzyme_dup>],
       ret_activity = [#enzyme<activity enzyme_dupnoneed>]
-    } : (tensor<4x4xf64>, tensor<4x4xf64>) -> tensor<f64>
+    }> : (tensor<4x4xf64>, tensor<4x4xf64>) -> tensor<f64>
     return %d : tensor<f64>
   }
 }

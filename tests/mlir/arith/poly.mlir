@@ -9,10 +9,10 @@ module {
     return %y1 : f64
   }
   func.func @dpoly(%x: f64, %dr: f64) -> f64 attributes { llvm.emit_c_interface } {
-    %d = enzyme.autodiff @poly(%x, %dr) {
+    %d = enzyme.autodiff @poly(%x, %dr) <{
       activity = [#enzyme<activity enzyme_active>],
       ret_activity = [#enzyme<activity enzyme_activenoneed>]
-    } : (f64, f64) -> f64
+    }> : (f64, f64) -> f64
     return %d : f64
   }
 }

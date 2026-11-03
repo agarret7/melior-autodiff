@@ -15,10 +15,10 @@ module {
   }
   func.func @jvp_ewise_mul(%x: tensor<4xf64>, %dx: tensor<4xf64>,
                            %y: tensor<4xf64>, %dy: tensor<4xf64>) -> tensor<4xf64> {
-    %d = enzyme.fwddiff @ewise_mul(%x, %dx, %y, %dy) {
+    %d = enzyme.fwddiff @ewise_mul(%x, %dx, %y, %dy) <{
       activity = [#enzyme<activity enzyme_dup>, #enzyme<activity enzyme_dup>],
       ret_activity = [#enzyme<activity enzyme_dupnoneed>]
-    } : (tensor<4xf64>, tensor<4xf64>, tensor<4xf64>, tensor<4xf64>) -> tensor<4xf64>
+    }> : (tensor<4xf64>, tensor<4xf64>, tensor<4xf64>, tensor<4xf64>) -> tensor<4xf64>
     return %d : tensor<4xf64>
   }
 }

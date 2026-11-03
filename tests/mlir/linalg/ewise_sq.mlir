@@ -13,10 +13,10 @@ module {
     return %result : tensor<4xf64>
   }
   func.func @jvp_ewise_sq(%x: tensor<4xf64>, %dx: tensor<4xf64>) -> tensor<4xf64> {
-    %d = enzyme.fwddiff @ewise_sq(%x, %dx) {
+    %d = enzyme.fwddiff @ewise_sq(%x, %dx) <{
       activity = [#enzyme<activity enzyme_dup>],
       ret_activity = [#enzyme<activity enzyme_dupnoneed>]
-    } : (tensor<4xf64>, tensor<4xf64>) -> tensor<4xf64>
+    }> : (tensor<4xf64>, tensor<4xf64>) -> tensor<4xf64>
     return %d : tensor<4xf64>
   }
 }

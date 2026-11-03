@@ -10,10 +10,10 @@ module {
     return %result : f64
   }
   func.func @jvp_relu(%x: f64, %dx: f64) -> f64 attributes { llvm.emit_c_interface } {
-    %d = enzyme.fwddiff @relu(%x, %dx) {
+    %d = enzyme.fwddiff @relu(%x, %dx) <{
       activity = [#enzyme<activity enzyme_dup>],
       ret_activity = [#enzyme<activity enzyme_dupnoneed>]
-    } : (f64, f64) -> f64
+    }> : (f64, f64) -> f64
     return %d : f64
   }
 }

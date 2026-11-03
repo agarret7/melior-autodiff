@@ -14,10 +14,10 @@ module {
   }
   func.func @jvp_trace4(%A: memref<4x4xf64>, %dA: memref<4x4xf64>) -> f64
       attributes { llvm.emit_c_interface } {
-    %d = enzyme.fwddiff @trace4(%A, %dA) {
+    %d = enzyme.fwddiff @trace4(%A, %dA) <{
       activity = [#enzyme<activity enzyme_dup>],
       ret_activity = [#enzyme<activity enzyme_dupnoneed>]
-    } : (memref<4x4xf64>, memref<4x4xf64>) -> f64
+    }> : (memref<4x4xf64>, memref<4x4xf64>) -> f64
     return %d : f64
   }
 }
