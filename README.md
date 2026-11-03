@@ -13,7 +13,7 @@ The C API it binds is upstream in Enzyme as of
 
 | | |
 |---|---|
-| **Dialect setup** | `create_context()`, or `register_dialect_extensions` + `load_dialect` for a custom registry |
+| **Dialect setup** | `create_context()`, or for a custom registry `dialect_handle()` (a melior `DialectHandle`) + `register_dialect_extensions` |
 | **Op construction** | Safe builders `autodiff`, `fwddiff`, `jacobian`, `batch` over Enzyme's C op constructors; `activity_attribute` / `activity_array_attribute` |
 | **Passes** | `pass::create_differentiate_pass`, `create_convert_enzyme_to_memref_pass`, `create_batch_pass`, `create_batch_diff_pass`, `create_remove_unnecessary_enzyme_ops_pass`, as melior `Pass`es |
 | **Passes by name** | `register_passes()` registers every Enzyme pass, so a textual pipeline can name any of them (`enzyme`, `simplify-memref-cache`, `add-to-op-to-split`, ...) |

@@ -6,7 +6,7 @@
 //! should use from Rust.
 
 use melior::{
-    dialect::DialectRegistry,
+    dialect::{DialectHandle, DialectRegistry},
     ir::{
         attribute::{ArrayAttribute, AttributeLike},
         Attribute, Location, Operation, Type, TypeLike, Value, ValueLike,
@@ -39,13 +39,9 @@ pub fn register_dialect_extensions(registry: &DialectRegistry) {
     unsafe { sys::enzymeRegisterDialectExtensions(registry.to_raw()) }
 }
 
-pub fn load_dialect(context: &Context) {
-    unsafe {
-        mlir_sys::mlirDialectHandleLoadDialect(
-            sys::mlirGetDialectHandle__enzyme__(),
-            context.to_raw(),
-        );
-    }
+/// The Enzyme dialect, to insert into a `DialectRegistry` or load into a `Context`.
+pub fn dialect_handle() -> DialectHandle {
+    unsafe { DialectHandle::from_raw(sys::mlirGetDialectHandle__enzyme__()) }
 }
 
 /// Registers Enzyme's passes with MLIR's global registry, so a textual pass
@@ -60,10 +56,10 @@ pub fn register_passes() {
 pub fn create_context() -> Context {
     let registry = DialectRegistry::new();
     register_all_dialects(&registry);
+    dialect_handle().insert_dialect(&registry);
     register_dialect_extensions(&registry);
     let context = Context::new_with_registry(&registry, false);
     context.load_all_available_dialects();
-    load_dialect(&context);
     context
 }
 
