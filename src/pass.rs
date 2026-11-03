@@ -25,12 +25,12 @@ pub fn create_differentiate_pass_with_options(postpasses: &str, verify_post_pass
 
 /// `convert-enzyme-to-memref`: lowers the Enzyme ops left after differentiation (gradients and
 /// caches) to the MemRef dialect.
-pub fn create_convert_enzyme_to_memref_pass() -> Pass {
+pub fn create_enzyme_ops_to_mem_ref_pass() -> Pass {
     unsafe { Pass::from_raw_fn(sys::enzymeCreateConvertEnzymeToMemRefPass) }
 }
 
 /// `remove-unnecessary-enzyme-ops`: removes Enzyme ops that differentiation left unnecessary.
-pub fn create_remove_unnecessary_enzyme_ops_pass() -> Pass {
+pub fn create_remove_unused_enzyme_ops_pass() -> Pass {
     unsafe { Pass::from_raw_fn(sys::enzymeCreateRemoveUnusedEnzymeOpsPass) }
 }
 

@@ -19,7 +19,7 @@ fn compile(src: &str) -> ExecutionEngine {
     let pm = PassManager::new(&ctx);
     pm.add_pass(pass::create_differentiate_pass());
     pm.add_pass(pass::create_lower_enzyme_helpers_pass());
-    pm.add_pass(pass::create_convert_enzyme_to_memref_pass());
+    pm.add_pass(pass::create_enzyme_ops_to_mem_ref_pass());
     pm.add_pass(create_inliner_pass());
     pm.add_pass(create_canonicalizer_pass());
     pm.add_pass(create_cse_pass());

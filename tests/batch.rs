@@ -29,7 +29,7 @@ fn batch_and_cleanup_passes_are_runnable() {
     let pm = PassManager::new(&ctx);
     pm.add_pass(pass::create_batch_pass());
     pm.add_pass(pass::create_batch_diff_pass());
-    pm.add_pass(pass::create_remove_unnecessary_enzyme_ops_pass());
+    pm.add_pass(pass::create_remove_unused_enzyme_ops_pass());
     pm.run(&mut module)
         .expect("batch and cleanup passes should run on an empty module");
 }
