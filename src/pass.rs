@@ -13,16 +13,16 @@ use crate::{sys, utility::register_passes, Activity};
 pub use crate::lower::create_lower_enzyme_helpers_pass;
 
 /// What `enzyme-wrap` generates, named as in Enzyme.
+///
+/// Enzyme also has split reverse mode, `ReverseModePrimal` and `ReverseModeGradient`, but its MLIR
+/// side doesn't implement it: `ReverseModePrimal` reaches `llvm_unreachable`, which is undefined
+/// behavior in a release build, so neither is offered here.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DerivativeMode {
     /// The forward-mode derivative: tangents in, tangents out.
     ForwardMode,
     /// The reverse-mode derivative, forward and reverse passes in one function.
     ReverseModeCombined,
-    /// Only the forward pass of reverse mode, which records what the reverse pass needs.
-    ReverseModePrimal,
-    /// Only the reverse pass of reverse mode.
-    ReverseModeGradient,
 }
 
 impl DerivativeMode {
@@ -30,8 +30,6 @@ impl DerivativeMode {
         match self {
             Self::ForwardMode => "ForwardMode",
             Self::ReverseModeCombined => "ReverseModeCombined",
-            Self::ReverseModePrimal => "ReverseModePrimal",
-            Self::ReverseModeGradient => "ReverseModeGradient",
         }
     }
 }
