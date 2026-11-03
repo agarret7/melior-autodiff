@@ -14,7 +14,7 @@ The C API it binds is upstream in Enzyme as of
 | | |
 |---|---|
 | **Dialect setup** | `create_context()`, or for a custom registry `dialect_handle()` (a melior `DialectHandle`) + `register_dialect_extensions` |
-| **Op construction** | Safe builders `autodiff`, `fwddiff`, `jacobian`, `batch` over Enzyme's C op constructors; `activity_attribute` / `activity_array_attribute` |
+| **Op construction** | `autodiff`, `fwddiff`, `jacobian` taking a function name and `&[Activity]`; `activity_attribute` / `activity_array_attribute`; and `ods`, every Enzyme op generated from its TableGen definition the way melior generates upstream dialects (builders, typed ops, accessors) |
 | **Passes** | `pass::create_differentiate_pass`, `create_convert_enzyme_to_memref_pass`, `create_batch_pass`, `create_batch_diff_pass`, `create_remove_unnecessary_enzyme_ops_pass`, as melior `Pass`es |
 | **Passes by name** | `register_passes()` registers every Enzyme pass, so a textual pipeline can name any of them (`enzyme`, `simplify-memref-cache`, `add-to-op-to-split`, ...) |
 | **Lowerings** | `pass::create_lower_enzyme_helpers_pass` (`enzyme.fill_zero`, `enzyme.broadcast`), for ops Enzyme emits but doesn't lower to upstream MLIR |

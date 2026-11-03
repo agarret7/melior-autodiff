@@ -10,6 +10,13 @@ fn build_enzyme_bindings() {
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let enzyme_src = manifest.join("enzyme/enzyme/Enzyme/MLIR/Integrations/c");
 
+    // `ods::enzyme` generates the dialect's ops from its TableGen definitions here.
+    let enzyme_dialect = manifest.join("enzyme/enzyme/Enzyme/MLIR/Dialect");
+    println!("cargo:rustc-env=ENZYME_DIALECT_DIR={}", enzyme_dialect.display());
+    for td in ["EnzymeOps.td", "Dialect.td", "EnzymeEnums.td"] {
+        println!("cargo:rerun-if-changed={}", enzyme_dialect.join(td).display());
+    }
+
     // Allow overriding the build dir via env var; default to our submodule build.
     let enzyme_build = std::env::var("ENZYME_BUILD_DIR")
         .map(PathBuf::from)
@@ -100,7 +107,7 @@ fn build_enzyme_bindings() {
         // Reuse mlir_sys types rather than re-generating them.
         .blocklist_type("Mlir.*")
         .raw_line("use mlir_sys::*;")
-        .allowlist_function("enzymeActivity.*|enzymeRegisterDialectExtensions|enzymeRegisterPasses|enzymeCreate.*|enzymeConvert.*|enzyme.*OpCreate|mlirGetDialectHandle__enzyme__")
+        .allowlist_function("enzymeActivity.*|enzymeRegisterDialectExtensions|enzymeRegisterPasses|enzymeCreate.*|enzymeConvert.*|mlirGetDialectHandle__enzyme__")
         .allowlist_type("")
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
         .generate()

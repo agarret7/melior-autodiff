@@ -1,4 +1,4 @@
-// Input for the op-builder tests in tests/ops.rs, which append a @caller built through the C API.
+// Input for the op-builder tests in tests/ops.rs, which append a @caller built through ods::enzyme.
 // Each test checks its own prefix.
 module {
   func.func @square(%x: f64) -> f64 {

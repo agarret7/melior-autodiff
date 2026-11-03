@@ -8,17 +8,16 @@
 use melior::{
     dialect::{DialectHandle, DialectRegistry},
     ir::{
-        attribute::{ArrayAttribute, AttributeLike},
-        Attribute, Location, Operation, Type, TypeLike, Value, ValueLike,
+        attribute::{ArrayAttribute, BoolAttribute, FlatSymbolRefAttribute, IntegerAttribute},
+        r#type::IntegerType,
+        Attribute, Location, Operation, Type, Value,
     },
     utility::register_all_dialects,
-    Context, StringRef,
-};
-use mlir_sys::{
-    MlirAttribute, MlirContext, MlirLocation, MlirOperation, MlirStringRef, MlirType, MlirValue,
+    Context,
 };
 
 mod lower;
+pub mod ods;
 pub mod pass;
 
 mod sys {
@@ -94,172 +93,54 @@ pub fn activity_array_attribute<'c>(
     ArrayAttribute::new(context, &attributes)
 }
 
-/// Builds `enzyme.autodiff` (reverse mode) on the function named `function`.
-pub fn autodiff<'c>(
-    context: &'c Context,
-    function: &str,
-    operands: &[Value<'c, '_>],
-    result_types: &[Type<'c>],
-    activity: &[Activity],
-    ret_activity: &[Activity],
-    width: i64,
-    strong_zero: bool,
-    location: Location<'c>,
-) -> Operation<'c> {
-    diff_op(
-        sys::enzymeAutoDiffOpCreate,
-        context,
-        function,
-        operands,
-        result_types,
-        activity,
-        ret_activity,
-        width,
-        strong_zero,
-        location,
-    )
+// `autodiff`, `fwddiff` and `jacobian` take the same arguments; each wraps its generated builder,
+// naming the function and the activities directly. `width` and `strong_zero` are left unset at
+// their defaults (1 and false), as the generated op would leave them.
+macro_rules! differentiation_op {
+    ($(#[$doc:meta])* $name:ident, $op:ident) => {
+        $(#[$doc])*
+        #[allow(clippy::too_many_arguments)]
+        pub fn $name<'c>(
+            context: &'c Context,
+            function: &str,
+            operands: &[Value<'c, '_>],
+            result_types: &[Type<'c>],
+            activity: &[Activity],
+            ret_activity: &[Activity],
+            width: i64,
+            strong_zero: bool,
+            location: Location<'c>,
+        ) -> Operation<'c> {
+            let mut builder = ods::$op::builder(context, location)
+                .outputs(result_types)
+                .inputs(operands)
+                .r#fn(FlatSymbolRefAttribute::new(context, function))
+                .activity(activity_array_attribute(context, activity))
+                .ret_activity(activity_array_attribute(context, ret_activity));
+            if width != 1 {
+                let i64_type = IntegerType::new(context, 64).into();
+                builder = builder.width(IntegerAttribute::new(i64_type, width));
+            }
+            if strong_zero {
+                builder = builder.strong_zero(BoolAttribute::new(context, true));
+            }
+            builder.build().into()
+        }
+    };
 }
 
-/// Builds `enzyme.fwddiff` (forward mode) on the function named `function`.
-pub fn fwddiff<'c>(
-    context: &'c Context,
-    function: &str,
-    operands: &[Value<'c, '_>],
-    result_types: &[Type<'c>],
-    activity: &[Activity],
-    ret_activity: &[Activity],
-    width: i64,
-    strong_zero: bool,
-    location: Location<'c>,
-) -> Operation<'c> {
-    diff_op(
-        sys::enzymeForwardDiffOpCreate,
-        context,
-        function,
-        operands,
-        result_types,
-        activity,
-        ret_activity,
-        width,
-        strong_zero,
-        location,
-    )
-}
-
-/// Builds `enzyme.jacobian` on the function named `function`.
-pub fn jacobian<'c>(
-    context: &'c Context,
-    function: &str,
-    operands: &[Value<'c, '_>],
-    result_types: &[Type<'c>],
-    activity: &[Activity],
-    ret_activity: &[Activity],
-    width: i64,
-    strong_zero: bool,
-    location: Location<'c>,
-) -> Operation<'c> {
-    diff_op(
-        sys::enzymeJacobianOpCreate,
-        context,
-        function,
-        operands,
-        result_types,
-        activity,
-        ret_activity,
-        width,
-        strong_zero,
-        location,
-    )
-}
-
-/// Builds `enzyme.batch`, mapping the function named `function` over leading `batch_shape` dims.
-pub fn batch<'c>(
-    context: &'c Context,
-    function: &str,
-    operands: &[Value<'c, '_>],
-    result_types: &[Type<'c>],
-    batch_shape: &[i64],
-    location: Location<'c>,
-) -> Operation<'c> {
-    let operands = raw_values(operands);
-    let result_types = raw_types(result_types);
-    unsafe {
-        Operation::from_raw(sys::enzymeBatchOpCreate(
-            context.to_raw(),
-            StringRef::new(function).to_raw(),
-            result_types.as_ptr(),
-            result_types.len() as isize,
-            operands.as_ptr(),
-            operands.len() as isize,
-            batch_shape.as_ptr(),
-            batch_shape.len() as isize,
-            location.to_raw(),
-        ))
-    }
-}
-
-type DiffOpCreate = unsafe extern "C" fn(
-    MlirContext,
-    MlirStringRef,
-    *const MlirType,
-    isize,
-    *const MlirValue,
-    isize,
-    *const MlirAttribute,
-    isize,
-    *const MlirAttribute,
-    isize,
-    i64,
-    bool,
-    MlirLocation,
-) -> MlirOperation;
-
-fn diff_op<'c>(
-    create: DiffOpCreate,
-    context: &'c Context,
-    function: &str,
-    operands: &[Value<'c, '_>],
-    result_types: &[Type<'c>],
-    activity: &[Activity],
-    ret_activity: &[Activity],
-    width: i64,
-    strong_zero: bool,
-    location: Location<'c>,
-) -> Operation<'c> {
-    let operands = raw_values(operands);
-    let result_types = raw_types(result_types);
-    let activity = raw_activities(context, activity);
-    let ret_activity = raw_activities(context, ret_activity);
-    unsafe {
-        Operation::from_raw(create(
-            context.to_raw(),
-            StringRef::new(function).to_raw(),
-            result_types.as_ptr(),
-            result_types.len() as isize,
-            operands.as_ptr(),
-            operands.len() as isize,
-            activity.as_ptr(),
-            activity.len() as isize,
-            ret_activity.as_ptr(),
-            ret_activity.len() as isize,
-            width,
-            strong_zero,
-            location.to_raw(),
-        ))
-    }
-}
-
-fn raw_values(values: &[Value]) -> Vec<MlirValue> {
-    values.iter().map(|value| value.to_raw()).collect()
-}
-
-fn raw_types(types: &[Type]) -> Vec<MlirType> {
-    types.iter().map(|ty| ty.to_raw()).collect()
-}
-
-fn raw_activities(context: &Context, activities: &[Activity]) -> Vec<MlirAttribute> {
-    activities
-        .iter()
-        .map(|activity| activity_attribute(context, *activity).to_raw())
-        .collect()
-}
+differentiation_op!(
+    /// Builds `enzyme.autodiff` (reverse mode) on the function named `function`.
+    autodiff,
+    AutoDiffOperation
+);
+differentiation_op!(
+    /// Builds `enzyme.fwddiff` (forward mode) on the function named `function`.
+    fwddiff,
+    ForwardDiffOperation
+);
+differentiation_op!(
+    /// Builds `enzyme.jacobian` on the function named `function`.
+    jacobian,
+    JacobianOperation
+);
