@@ -16,10 +16,10 @@ module {
     return %r : f64
   }
   func.func @vjp(%x: memref<4xf64>, %dx: memref<4xf64>, %dr: f64) {
-    enzyme.autodiff @sumsq(%x, %dx, %dr) {
+    enzyme.autodiff @sumsq(%x, %dx, %dr) <{
       activity = [#enzyme<activity enzyme_dup>],
       ret_activity = [#enzyme<activity enzyme_activenoneed>]
-    } : (memref<4xf64>, memref<4xf64>, f64) -> ()
+    }> : (memref<4xf64>, memref<4xf64>, f64) -> ()
     return
   }
 }

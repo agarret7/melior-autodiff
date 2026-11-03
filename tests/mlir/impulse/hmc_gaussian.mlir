@@ -12,7 +12,7 @@ module {
     return %lp : tensor<f64>
   }
   func.func private @model(%rng : tensor<2xui64>, %mean : tensor<f64>, %stddev : tensor<f64>) -> (tensor<2xui64>, tensor<f64>) {
-    %s:2 = impulse.sample @normal(%rng, %mean, %stddev) { logpdf = @logpdf, symbol = #impulse.symbol<1>, name="s" } : (tensor<2xui64>, tensor<f64>, tensor<f64>) -> (tensor<2xui64>, tensor<f64>)
+    %s:2 = impulse.sample @normal(%rng, %mean, %stddev) <{ logpdf = @logpdf, symbol = #impulse.symbol<1>, name="s" }> : (tensor<2xui64>, tensor<f64>, tensor<f64>) -> (tensor<2xui64>, tensor<f64>)
     return %s#0, %s#1 : tensor<2xui64>, tensor<f64>
   }
   func.func private @hmc(%rng : tensor<2xui64>, %mean : tensor<f64>, %stddev : tensor<f64>) -> tensor<NNx1xf64> {
@@ -20,8 +20,8 @@ module {
     %step_size = arith.constant dense<0.1> : tensor<f64>
     %res:9 = impulse.infer @model(%rng, %mean, %stddev) given %init_trace
       step_size = %step_size
-      { hmc_config = #impulse.hmc_config<trajectory_length = 1.0>,
-        name = "hmc", selection = [[#impulse.symbol<1>]], all_addresses = [[#impulse.symbol<1>]], num_warmup = 0, num_samples = NN }
+      <{ hmc_config = #impulse.hmc_config<trajectory_length = 1.0>,
+        name = "hmc", selection = [[#impulse.symbol<1>]], all_addresses = [[#impulse.symbol<1>]], num_warmup = 0, num_samples = NN }>
       : (tensor<2xui64>, tensor<f64>, tensor<f64>, tensor<1x1xf64>, tensor<f64>) -> (tensor<NNx1xf64>, tensor<NNx2xi1>, tensor<NNxf64>, tensor<2xui64>, tensor<1x1xf64>, tensor<1x1xf64>, tensor<f64>, tensor<f64>, tensor<1x1xf64>)
     return %res#0 : tensor<NNx1xf64>
   }

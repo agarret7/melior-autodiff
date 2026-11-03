@@ -4,7 +4,7 @@ module {
     return %y : f64
   }
   func.func @dsquare(%x: tensor<4xf64>) -> tensor<4xf64> {
-    %r = enzyme.batch @square(%x) { batch_shape = array<i64: 4> }
+    %r = enzyme.batch @square(%x) <{ batch_shape = array<i64: 4> }>
       : (tensor<4xf64>) -> tensor<4xf64>
     return %r : tensor<4xf64>
   }

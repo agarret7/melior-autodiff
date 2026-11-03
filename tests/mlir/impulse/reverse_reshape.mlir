@@ -4,10 +4,10 @@ module {
     return %y : tensor<2x2xf64>
   }
   func.func @df(%x: tensor<4xf64>, %dr: tensor<2x2xf64>) -> tensor<4xf64> {
-    %d = enzyme.autodiff @f(%x, %dr) {
+    %d = enzyme.autodiff @f(%x, %dr) <{
       activity = [#enzyme<activity enzyme_active>],
       ret_activity = [#enzyme<activity enzyme_activenoneed>]
-    } : (tensor<4xf64>, tensor<2x2xf64>) -> tensor<4xf64>
+    }> : (tensor<4xf64>, tensor<2x2xf64>) -> tensor<4xf64>
     return %d : tensor<4xf64>
   }
 }
