@@ -15,6 +15,11 @@ use melior::{
     Context,
 };
 
+// Runs the README's examples as doctests, so they keep compiling.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+struct ReadmeDoctests;
+
 mod lower;
 pub mod ods;
 pub mod pass;
