@@ -15,7 +15,7 @@ use melior::{
     },
     pass::{create_external, ExternalPass, Pass},
     apply_patterns_and_fold_greedily_with_op, create_op_rewrite_pattern, Context,
-    GreedyRewriteDriverConfig, PatternRewriter, RewritePattern, RewritePatternSet, RewriterBase,
+    Error, GreedyRewriteDriverConfig, RewritePattern, RewritePatternSet, RewriterBase,
 };
 
 use crate::lower::{linalg_fill, zero_attribute};
@@ -73,14 +73,13 @@ fn pattern(ctx: &Context, root: &str, lower: Lowering) -> RewritePattern {
         root,
         1,
         ctx,
-        move |_, op, rewriter| {
-            let op = unsafe { OperationRef::from_raw(op) };
-            let rewriter = unsafe { PatternRewriter::from_raw(rewriter) };
+        move |op, rewriter| {
             let rewriter = rewriter.as_rewriter_base();
             let context = op.context();
             let ctx = unsafe { context.to_ref() };
             rewriter.set_insertion_point_before(op);
-            lower(ctx, op, &rewriter)
+            // A lowering that doesn't apply leaves the op for another pattern.
+            lower(ctx, op, &rewriter).then_some(()).ok_or(Error::ApplyPatterns)
         },
         &[],
     )

@@ -47,7 +47,8 @@ let result = grad(3.0, 1.0); // 6.0 for d/dx x^2
 
 Requires LLVM/MLIR 23 and the Enzyme submodule built against it.
 
-The submodule tracks Enzyme's upstream `main` plus a few commits that aren't upstream yet:
+On this `impulse` branch, the submodule tracks Enzyme's upstream `main` plus a few commits that aren't
+upstream yet (`main` of this crate needs only the first):
 
 - **LLVM 23 compatibility.** Upstream targets LLVM 24. One small commit keeps this branch building
   against LLVM 23, and goes away once `mlir-sys` supports LLVM 24.

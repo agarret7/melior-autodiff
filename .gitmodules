@@ -1,4 +1,4 @@
 [submodule "enzyme"]
 	path = enzyme
 	url = https://github.com/agarret7/Enzyme.git
-	branch = melior-autodiff
+	branch = fix-linalg-reverse

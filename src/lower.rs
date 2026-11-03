@@ -1,17 +1,21 @@
 //! Lowerings for Enzyme ops that Enzyme emits but provides no upstream-MLIR lowering for.
 
 use melior::{
-    dialect::{arith, ods::tensor, DialectHandle},
+    dialect::{
+        arith,
+        ods::{linalg, tensor},
+        DialectHandle,
+    },
     ir::{
-        attribute::{DenseI32ArrayAttribute, FloatAttribute, IntegerAttribute},
-        operation::{OperationBuilder, OperationLike},
+        attribute::{FloatAttribute, IntegerAttribute},
+        operation::OperationLike,
         r#type::{MemRefType, RankedTensorType, ShapedTypeLike, TypeId},
-        Attribute, Block, BlockLike, Identifier, Location, OperationRef, Region, RegionLike, Type,
-        TypeLike, Value, ValueLike,
+        Attribute, Block, BlockLike, Location, OperationRef, Region, RegionLike, Type, TypeLike,
+        Value, ValueLike,
     },
     pass::{create_external, ExternalPass, Pass},
     apply_patterns_and_fold_greedily_with_op, create_op_rewrite_pattern, Context,
-    GreedyRewriteDriverConfig, PatternRewriter, RewritePattern, RewritePatternSet,
+    Error, GreedyRewriteDriverConfig, RewritePattern, RewritePatternSet,
 };
 
 #[repr(align(8))]
@@ -53,28 +57,24 @@ fn fill_zero_pattern(ctx: &Context) -> RewritePattern {
         "enzyme.fill_zero",
         1,
         ctx,
-        |_, op, rewriter| {
-            let op = unsafe { OperationRef::from_raw(op) };
-            let rewriter = unsafe { PatternRewriter::from_raw(rewriter) };
+        |op, rewriter| {
             let rewriter = rewriter.as_rewriter_base();
             let context = op.context();
             let ctx = unsafe { context.to_ref() };
             let loc = op.location();
 
             let memref = op.operand(0).unwrap();
-            let Ok(memref_type) = MemRefType::try_from(memref.r#type()) else {
-                return false;
-            };
+            let memref_type = MemRefType::try_from(memref.r#type())
+                .map_err(|_| Error::TypeExpected("memref", memref.r#type().to_string()))?;
             let element = memref_type.element();
-            let Some(zero) = zero_attribute(ctx, element) else {
-                return false;
-            };
+            let zero = zero_attribute(ctx, element)
+                .ok_or_else(|| Error::TypeExpected("integer or float", element.to_string()))?;
 
             rewriter.set_insertion_point_before(op);
             let zero = rewriter.insert(arith::constant(ctx, zero, loc));
             rewriter.insert(linalg_fill(ctx, zero.result(0).unwrap().into(), memref, loc));
             rewriter.erase_op(op);
-            true
+            Ok(())
         },
         &["arith.constant", "linalg.fill"],
     )
@@ -87,9 +87,7 @@ fn broadcast_pattern(ctx: &Context) -> RewritePattern {
         "enzyme.broadcast",
         1,
         ctx,
-        |_, op, rewriter| {
-            let op = unsafe { OperationRef::from_raw(op) };
-            let rewriter = unsafe { PatternRewriter::from_raw(rewriter) };
+        |op, rewriter| {
             let rewriter = rewriter.as_rewriter_base();
             let context = op.context();
             let ctx = unsafe { context.to_ref() };
@@ -100,11 +98,10 @@ fn broadcast_pattern(ctx: &Context) -> RewritePattern {
             rewriter.set_insertion_point_before(op);
 
             let input: Value = if input.r#type().is_shaped() {
-                let Ok(input_type) = RankedTensorType::try_from(input.r#type()) else {
-                    return false;
-                };
+                let input_type = RankedTensorType::try_from(input.r#type())
+                    .map_err(|_| Error::TypeExpected("ranked tensor", input.r#type().to_string()))?;
                 if input_type.rank() != 0 {
-                    return false;
+                    return Err(Error::TypeExpected("rank-0 tensor", input_type.to_string()));
                 }
                 rewriter
                     .insert(tensor::extract(ctx, input_type.element(), input, &[], loc).into())
@@ -118,7 +115,7 @@ fn broadcast_pattern(ctx: &Context) -> RewritePattern {
                 tensor::splat(ctx, result_type, input, &[], op.location()).into(),
             );
             rewriter.replace_op_with_operation(op, splat);
-            true
+            Ok(())
         },
         &["tensor.extract", "tensor.splat"],
     )
@@ -134,7 +131,6 @@ pub(crate) fn zero_attribute<'c>(ctx: &'c Context, element: Type<'c>) -> Option<
     }
 }
 
-// melior has no builder for linalg structured ops, so the body region is built by hand.
 // A tensor `output` yields the filled tensor; a memref `output` is filled in place.
 pub(crate) fn linalg_fill<'c>(
     ctx: &'c Context,
@@ -142,15 +138,11 @@ pub(crate) fn linalg_fill<'c>(
     output: Value<'c, '_>,
     loc: Location<'c>,
 ) -> melior::ir::Operation<'c> {
+    // Named ops take their body as a region, even though it's always the same:
+    // here, yield the fill value.
     let element = value.r#type();
     let body = Block::new(&[(element, loc), (element, loc)]);
-    let input = body.argument(0).unwrap().into();
-    body.append_operation(
-        OperationBuilder::new("linalg.yield", loc)
-            .add_operands(&[input])
-            .build()
-            .unwrap(),
-    );
+    body.append_operation(linalg::r#yield(ctx, &[body.argument(0).unwrap().into()], loc).into());
     let region = Region::new();
     region.append_block(body);
 
@@ -159,14 +151,5 @@ pub(crate) fn linalg_fill<'c>(
     } else {
         vec![]
     };
-    OperationBuilder::new("linalg.fill", loc)
-        .add_operands(&[value, output])
-        .add_results(&results)
-        .add_attributes(&[(
-            Identifier::new(ctx, "operandSegmentSizes"),
-            DenseI32ArrayAttribute::new(ctx, &[1, 1]).into(),
-        )])
-        .add_regions([region])
-        .build()
-        .unwrap()
+    linalg::fill(ctx, &results, &[value], &[output], region, loc).into()
 }
