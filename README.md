@@ -18,8 +18,7 @@ The C API it binds is upstream in Enzyme as of
 | **Pass construction** | `enzymeCreateDifferentiatePass`, `enzymeCreateConvertEnzymeToMemRefPass`, `enzymeCreateBatchPass`, `enzymeCreateBatchDiffPass`, `enzymeCreateRemoveUnusedEnzymeOpsPass` |
 | **Passes by name** | `register_passes()` registers every Enzyme pass, so a textual pipeline can name any of them (`enzyme`, `simplify-memref-cache`, `add-to-op-to-split`, ...) |
 | **Lowerings** | `create_lower_enzyme_helpers_pass` (`enzyme.fill_zero`, `enzyme.broadcast`), for ops Enzyme emits but doesn't lower to upstream MLIR |
-| **JIT utilities** | `lookup_jit_fn!` — look up a compiled function by name and return a `Box<dyn Fn(...)>`, transmute isolated to construction |
-| **Benchmarks** | Criterion suite measuring compile latency (~6–9 ms), `invoke_packed` overhead (~750 ns), and raw/boxed call cost (~2 ns) |
+| **Benchmarks** | Criterion suite measuring compile latency (~6–9 ms), `invoke_packed` overhead (~750 ns), and direct call cost (~2 ns) |
 
 ## Quick example
 
@@ -39,8 +38,10 @@ pm.add_pass(create_reconcile_unrealized_casts());
 pm.run(&mut module).unwrap();
 
 let engine = ExecutionEngine::new(&module, 3, &[], false, false);
-let grad = lookup_jit_fn!(&engine, "dmy_fn", fn(x: f64, seed: f64) -> f64);
-let result = grad(3.0, 1.0); // 6.0 for d/dx x^2
+// The signature must match the compiled function exactly.
+let grad: unsafe extern "C" fn(f64, f64) -> f64 =
+    unsafe { std::mem::transmute(engine.lookup("dmy_fn")) };
+let result = unsafe { grad(3.0, 1.0) }; // 6.0 for d/dx x^2
 ```
 
 ## Build
@@ -77,11 +78,11 @@ compile/square          ~5.8 ms   (parse → differentiate → lower → JIT com
 compile/poly_x8         ~8.8 ms
 execute/dsquare         ~775 ns   (invoke_packed FFI trampoline)
 execute_raw/dsquare     ~2 ns     (raw fn ptr via engine.lookup)
-execute_boxed/dsquare   ~2 ns     (Box<dyn Fn> via lookup_jit_fn!)
 ```
 
-The ~750 ns `invoke_packed` overhead is the `void(**)(void**)` trampoline. `lookup_jit_fn!` bypasses
-it entirely — use it for any inner loop (e.g. HMC leapfrog steps).
+`invoke_packed` looks the function up by name and calls it through its `void(**)(void**)` wrapper on
+every call. Looking it up once with `engine.lookup` and calling the pointer directly avoids both; do
+that for any inner loop (e.g. HMC leapfrog steps).
 
 ## Enzyme dialect boundary
 

@@ -273,25 +273,3 @@ fn raw_activities(context: &Context, activities: &[Activity]) -> Vec<MlirAttribu
         .map(|activity| activity_attribute(context, *activity).to_raw())
         .collect()
 }
-
-/// Look up a JIT-compiled function and return it as a `Box<dyn Fn>`.
-///
-/// The transmute is contained inside the macro; the returned closure is safe to call.
-/// The signature must match the compiled function exactly or the call is UB.
-///
-/// # Example
-/// ```ignore
-/// let grad = lookup_jit_fn!(&engine, "dsquare", fn(x: f64, dr: f64) -> f64);
-/// let result = grad(3.0, 1.0); // 6.0
-/// ```
-#[macro_export]
-macro_rules! lookup_jit_fn {
-    ($engine:expr, $name:expr, fn($($a:ident : $A:ty),*) -> $R:ty) => {{
-        let f: unsafe extern "C" fn($($A),*) -> $R = unsafe {
-            let raw = $engine.lookup($name);
-            assert!(!raw.is_null(), "lookup_jit_fn: {} returned null", $name);
-            std::mem::transmute(raw)
-        };
-        Box::new(move |$($a: $A),*| unsafe { f($($a),*) }) as Box<dyn Fn($($A),*) -> $R>
-    }};
-}
