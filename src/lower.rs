@@ -1,4 +1,4 @@
-//! Lowerings for Enzyme ops that Enzyme emits but provides no upstream-MLIR lowering for.
+//! Lowerings for Enzyme ops that Enzyme generates but has no pass to lower.
 
 use melior::{
     dialect::{
@@ -19,19 +19,56 @@ use melior::{
 
 #[repr(align(8))]
 struct PassId;
-static LOWER_ENZYME_HELPERS: PassId = PassId;
+static LOWER_FILL_ZERO: PassId = PassId;
+static LOWER_BROADCAST: PassId = PassId;
 
-/// Lowers `enzyme.fill_zero` to `linalg.fill`, and `enzyme.broadcast` to `tensor.splat` (scalar
-/// input) or `linalg.broadcast` (tensor input).
-/// Run before `convert-enzyme-to-memref`, which rejects any enzyme op it does not handle.
-pub fn create_lower_enzyme_helpers_pass() -> Pass {
+/// `lower-fill-zero`: lowers `enzyme.fill_zero` to `linalg.fill` with zero.
+///
+/// Enzyme emits `enzyme.fill_zero` to zero a memref's shadow in reverse mode, for example for a
+/// `memref.alloca`, but has no pass to lower it, and `convert-enzyme-to-memref` fails on it. Run
+/// this before `convert-enzyme-to-memref`.
+pub fn create_lower_fill_zero_pass() -> Pass {
+    pattern_pass(
+        fill_zero_pattern,
+        TypeId::create(&LOWER_FILL_ZERO),
+        "LowerFillZero",
+        "lower-fill-zero",
+        "Lower enzyme.fill_zero to linalg.fill",
+        &[DialectHandle::arith(), DialectHandle::linalg()],
+    )
+}
+
+/// `lower-broadcast`: lowers `enzyme.broadcast` to `tensor.splat` (scalar input) or
+/// `linalg.broadcast` (tensor input).
+///
+/// Enzyme emits `enzyme.broadcast` when it differentiates with `width` above one, to give each
+/// tangent its own copy of a value, but has no pass to lower it. Run this after differentiating.
+pub fn create_lower_broadcast_pass() -> Pass {
+    pattern_pass(
+        broadcast_pattern,
+        TypeId::create(&LOWER_BROADCAST),
+        "LowerBroadcast",
+        "lower-broadcast",
+        "Lower enzyme.broadcast to tensor.splat or linalg.broadcast",
+        &[DialectHandle::linalg(), DialectHandle::tensor()],
+    )
+}
+
+// A pass that applies one rewrite pattern greedily.
+fn pattern_pass(
+    pattern: fn(&Context) -> RewritePattern,
+    id: TypeId,
+    name: &str,
+    argument: &str,
+    description: &str,
+    dependent_dialects: &[DialectHandle],
+) -> Pass {
     create_external(
-        |op: OperationRef, pass: ExternalPass| {
+        move |op: OperationRef, pass: ExternalPass| {
             let context = op.context();
             let ctx = unsafe { context.to_ref() };
             let patterns = RewritePatternSet::new(ctx);
-            patterns.add(fill_zero_pattern(ctx));
-            patterns.add(broadcast_pattern(ctx));
+            patterns.add(pattern(ctx));
             if apply_patterns_and_fold_greedily_with_op(
                 op,
                 patterns.freeze(),
@@ -42,12 +79,12 @@ pub fn create_lower_enzyme_helpers_pass() -> Pass {
                 pass.signal_failure();
             }
         },
-        TypeId::create(&LOWER_ENZYME_HELPERS),
-        "LowerEnzymeHelpers",
-        "lower-enzyme-helpers",
-        "Lower enzyme.fill_zero and enzyme.broadcast to upstream MLIR",
+        id,
+        name,
+        argument,
+        description,
         "",
-        &[DialectHandle::arith(), DialectHandle::linalg(), DialectHandle::tensor()],
+        dependent_dialects,
     )
 }
 

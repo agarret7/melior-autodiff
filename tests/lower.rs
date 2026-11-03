@@ -18,7 +18,8 @@ fn compile(src: &str) -> ExecutionEngine {
     let mut module = Module::parse(&ctx, src).expect("parse failed");
     let pm = PassManager::new(&ctx);
     pm.add_pass(pass::create_differentiate_pass());
-    pm.add_pass(pass::create_lower_enzyme_helpers_pass());
+    pm.add_pass(pass::create_lower_fill_zero_pass());
+    pm.add_pass(pass::create_lower_broadcast_pass());
     pm.add_pass(pass::create_enzyme_ops_to_mem_ref_pass());
     pm.add_pass(create_inliner_pass());
     pm.add_pass(create_canonicalizer_pass());

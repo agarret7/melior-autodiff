@@ -10,7 +10,7 @@ use mlir_sys::{mlirOpPassManagerAddPipeline, MlirStringRef};
 
 use crate::{sys, utility::register_passes, Activity};
 
-pub use crate::lower::create_lower_enzyme_helpers_pass;
+pub use crate::lower::{create_lower_broadcast_pass, create_lower_fill_zero_pass};
 
 /// What `enzyme-wrap` generates, named as in Enzyme.
 ///
