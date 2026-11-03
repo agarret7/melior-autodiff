@@ -7,11 +7,10 @@ use melior::{
         DialectHandle,
     },
     ir::{
-        attribute::{FloatAttribute, IntegerAttribute},
+        attribute::{DenseI64ArrayAttribute, FloatAttribute, IntegerAttribute},
         operation::OperationLike,
         r#type::{MemRefType, RankedTensorType, ShapedTypeLike, TypeId},
-        Attribute, Block, BlockLike, Location, OperationRef, Region, RegionLike, Type, TypeLike,
-        Value, ValueLike,
+        Attribute, Location, Operation, OperationRef, Region, Type, TypeLike, Value, ValueLike,
     },
     pass::{create_external, ExternalPass, Pass},
     apply_patterns_and_fold_greedily_with_op, create_op_rewrite_pattern, Context,
@@ -22,7 +21,8 @@ use melior::{
 struct PassId;
 static LOWER_ENZYME_HELPERS: PassId = PassId;
 
-/// Lowers `enzyme.fill_zero` to `linalg.fill` and scalar `enzyme.broadcast` to `tensor.splat`.
+/// Lowers `enzyme.fill_zero` to `linalg.fill`, and `enzyme.broadcast` to `tensor.splat` (scalar
+/// input) or `linalg.broadcast` (tensor input).
 /// Run before `convert-enzyme-to-memref`, which rejects any enzyme op it does not handle.
 pub fn create_lower_enzyme_helpers_pass() -> Pass {
     create_external(
@@ -80,8 +80,9 @@ fn fill_zero_pattern(ctx: &Context) -> RewritePattern {
     )
 }
 
-// enzyme.broadcast %x {shape} : T -> tensor<...xT>  ->  tensor.splat %x
-// A rank-0 tensor %x is extracted to a scalar first; higher-rank inputs are not handled yet.
+// enzyme.broadcast adds the leading dims in its `shape` attribute:
+//   scalar %x : T             ->  tensor.splat %x : tensor<shape x T>
+//   tensor %x : tensor<D x T> ->  linalg.broadcast ins(%x) outs(tensor.empty : tensor<shape x D x T>)
 fn broadcast_pattern(ctx: &Context) -> RewritePattern {
     create_op_rewrite_pattern(
         "enzyme.broadcast",
@@ -94,30 +95,43 @@ fn broadcast_pattern(ctx: &Context) -> RewritePattern {
 
             let loc = op.location();
             let input = op.operand(0).unwrap();
-            let result_type = op.result(0).unwrap().r#type();
+            let result_type = RankedTensorType::try_from(op.result(0).unwrap().r#type())
+                .map_err(|_| Error::TypeExpected("ranked tensor", op.result(0).unwrap().r#type().to_string()))?;
             rewriter.set_insertion_point_before(op);
 
-            let input: Value = if input.r#type().is_shaped() {
-                let input_type = RankedTensorType::try_from(input.r#type())
-                    .map_err(|_| Error::TypeExpected("ranked tensor", input.r#type().to_string()))?;
-                if input_type.rank() != 0 {
-                    return Err(Error::TypeExpected("rank-0 tensor", input_type.to_string()));
-                }
-                rewriter
-                    .insert(tensor::extract(ctx, input_type.element(), input, &[], loc).into())
-                    .result(0)
-                    .unwrap()
-                    .into()
-            } else {
-                input
-            };
-            let splat = rewriter.insert(
-                tensor::splat(ctx, result_type, input, &[], op.location()).into(),
+            if !input.r#type().is_shaped() {
+                let splat = rewriter.insert(tensor::splat(ctx, result_type.into(), input, &[], loc).into());
+                rewriter.replace_op_with_operation(op, splat);
+                return Ok(());
+            }
+
+            let input_type = RankedTensorType::try_from(input.r#type())
+                .map_err(|_| Error::TypeExpected("ranked tensor", input.r#type().to_string()))?;
+            if !result_type.has_static_shape() {
+                return Err(Error::TypeExpected("statically shaped tensor", result_type.to_string()));
+            }
+            // The added dims are the leading ones.
+            let added = (result_type.rank() - input_type.rank()) as i64;
+            let dimensions: Vec<i64> = (0..added).collect();
+
+            let empty = rewriter.insert(tensor::empty(ctx, result_type.into(), &[], loc).into());
+            let broadcast = linalg_named(
+                linalg::broadcast(
+                    ctx,
+                    &[result_type.into()],
+                    input,
+                    empty.result(0).unwrap().into(),
+                    Region::new(),
+                    DenseI64ArrayAttribute::new(ctx, &dimensions),
+                    loc,
+                )
+                .into(),
             );
-            rewriter.replace_op_with_operation(op, splat);
+            let broadcast = rewriter.insert(broadcast);
+            rewriter.replace_op_with_operation(op, broadcast);
             Ok(())
         },
-        &["tensor.extract", "tensor.splat"],
+        &["tensor.splat", "tensor.empty", "linalg.broadcast"],
     )
 }
 
@@ -138,18 +152,16 @@ pub(crate) fn linalg_fill<'c>(
     output: Value<'c, '_>,
     loc: Location<'c>,
 ) -> melior::ir::Operation<'c> {
-    // Named ops take their body as a region, even though it's always the same:
-    // here, yield the fill value.
-    let element = value.r#type();
-    let body = Block::new(&[(element, loc), (element, loc)]);
-    body.append_operation(linalg::r#yield(ctx, &[body.argument(0).unwrap().into()], loc).into());
-    let region = Region::new();
-    region.append_block(body);
-
     let results: Vec<Type> = if output.r#type().is_tensor() {
         vec![output.r#type()]
     } else {
         vec![]
     };
-    linalg::fill(ctx, &results, &[value], &[output], region, loc).into()
+    linalg_named(linalg::fill(ctx, &results, &[value], &[output], Region::new(), loc).into())
+}
+
+// Named linalg ops carry their body as a region even though the op fixes it; MLIR builds it.
+fn linalg_named(op: Operation) -> Operation {
+    unsafe { mlir_sys::mlirLinalgFillBuiltinNamedOpRegion(op.to_raw()) };
+    op
 }

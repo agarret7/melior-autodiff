@@ -154,43 +154,6 @@ fn bench_execute(c: &mut Criterion) {
     group.finish();
 }
 
-// Box<dyn Fn> wrapper — transmute at construction, vtable dispatch per call.
-fn bench_execute_boxed(c: &mut Criterion) {
-    let ctx = create_context();
-    let mut group = c.benchmark_group("execute_boxed");
-
-    {
-        let pm = PassManager::new(&ctx);
-        add_lowering_passes(&pm);
-        let mut module = Module::parse(&ctx, SQUARE_MODULE).unwrap();
-        pm.run(&mut module).unwrap();
-        let engine = ExecutionEngine::new(&module, 3, &[], false, false);
-
-        let dsquare =
-            melior_autodiff::lookup_jit_fn!(&engine, "dsquare", fn(x: f64, dr: f64) -> f64);
-
-        group.bench_function("dsquare", |b| {
-            b.iter(|| black_box(dsquare(black_box(3.0), black_box(1.0))));
-        });
-    }
-
-    {
-        let pm = PassManager::new(&ctx);
-        add_lowering_passes(&pm);
-        let mut module = Module::parse(&ctx, POLY_MODULE).unwrap();
-        pm.run(&mut module).unwrap();
-        let engine = ExecutionEngine::new(&module, 3, &[], false, false);
-
-        let dpoly = melior_autodiff::lookup_jit_fn!(&engine, "dpoly", fn(x: f64, dr: f64) -> f64);
-
-        group.bench_function("dpoly_x8", |b| {
-            b.iter(|| black_box(dpoly(black_box(2.0), black_box(1.0))));
-        });
-    }
-
-    group.finish();
-}
-
 // Raw function pointer vs invoke_packed — same JIT'd code, different call paths.
 // invoke_packed goes through a void(**)(void**) trampoline; lookup gives the
 // native C ABI pointer directly.
@@ -336,7 +299,6 @@ criterion_group!(
     benches,
     bench_compile,
     bench_execute,
-    bench_execute_boxed,
     bench_execute_raw,
     bench_strong_zero
 );

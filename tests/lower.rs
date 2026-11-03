@@ -80,6 +80,41 @@ fn broadcast_width2_fwddiff() {
     );
 }
 
+#[repr(C)]
+struct MemRef2 {
+    allocated: *mut f64,
+    aligned: *mut f64,
+    offset: i64,
+    sizes: [i64; 2],
+    strides: [i64; 2],
+}
+
+impl MemRef2 {
+    fn new<const R: usize, const C: usize>(data: &mut [[f64; C]; R]) -> Self {
+        let ptr = data.as_mut_ptr().cast();
+        MemRef2 { allocated: ptr, aligned: ptr, offset: 0, sizes: [R as i64, C as i64], strides: [C as i64, 1] }
+    }
+}
+
+// Width-2 forward mode over a tensor broadcasts the tensor primal to tensor<2x3xf64>;
+// lowered to linalg.broadcast. d/dx x² = 2x elementwise, for each of the two tangents.
+#[test]
+fn broadcast_width2_tensor_fwddiff() {
+    let engine = compile(include_str!("mlir/lower/broadcast_width2_tensor.mlir"));
+    type Jvp2 = unsafe extern "C" fn(*mut MemRef1, *mut MemRef2, *mut MemRef2);
+    let jvp2: Jvp2 = unsafe { std::mem::transmute(engine.lookup("_mlir_ciface_jvp2")) };
+
+    let mut x = [1.0, 2.0, 3.0];
+    let mut dx = [[1.0, 1.0, 1.0], [1.0, -1.0, 0.5]];
+    let mut out = [[0.0; 3]; 2];
+    unsafe { jvp2(&mut MemRef1::new(&mut x), &mut MemRef2::new(&mut dx), &mut MemRef2::new(&mut out)) };
+    let expected = [[2.0, 4.0, 6.0], [2.0, -4.0, 3.0]];
+    assert!(
+        out.iter().flatten().zip(expected.iter().flatten()).all(|(a, b)| approx(*a, *b)),
+        "got {out:?}, expected {expected:?}"
+    );
+}
+
 // Reverse mode through a memref.alloca emits enzyme.fill_zero to zero the shadow buffer.
 // f(x) = x² staged through memory,  f'(x) = 2x.
 #[test]
