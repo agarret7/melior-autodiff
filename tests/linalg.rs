@@ -35,3 +35,11 @@ fn fwddiff_linalg_generic_trace() {
 fn fwddiff_linalg_generic_ewise_mul() {
     differentiate("mlir/linalg/ewise_mul.mlir");
 }
+
+// f(x) = Σ xᵢ² over a memref.  Reverse mode on tensors is unsupported in Enzyme, and on memrefs
+// the linalg.generic is silently skipped: no enzyme.genericAdjoint is emitted, so ∇f comes back 0.
+#[test]
+#[ignore = "Enzyme skips reverse-mode linalg.generic on memrefs; gradient is silently zero"]
+fn autodiff_linalg_generic_reduction_memref() {
+    differentiate("mlir/linalg/sumsq.mlir");
+}

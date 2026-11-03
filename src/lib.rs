@@ -18,6 +18,9 @@ use mlir_sys::{
     MlirAttribute, MlirContext, MlirLocation, MlirOperation, MlirStringRef, MlirType, MlirValue,
 };
 
+mod lower;
+pub use lower::create_lower_enzyme_helpers_pass;
+
 mod sys {
     #![allow(
         non_upper_case_globals,

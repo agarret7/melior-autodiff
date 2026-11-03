@@ -74,6 +74,21 @@ fn build_enzyme_bindings() {
         "cargo:rerun-if-changed={}",
         enzyme_src.join("EnzymeMLIR.h").display()
     );
+    // Relink when a rebuilt Enzyme library changes without a header change.
+    for lib in [
+        "Integrations/c/libMLIRCAPIEnzyme.a",
+        "Dialect/libMLIREnzyme.a",
+        "Dialect/Impulse/libMLIRImpulse.a",
+        "Interfaces/libMLIREnzymeAutoDiffInterface.a",
+        "Analysis/libMLIREnzymeAnalysis.a",
+        "Passes/libMLIREnzymeTransforms.a",
+        "Implementations/libMLIREnzymeImplementations.a",
+    ] {
+        println!(
+            "cargo:rerun-if-changed={}",
+            enzyme_build.join("Enzyme/MLIR").join(lib).display()
+        );
+    }
 
     let bindings = bindgen::Builder::default()
         .header(enzyme_src.join("EnzymeMLIR.h").to_str().unwrap())
