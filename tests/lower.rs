@@ -1,3 +1,5 @@
+use std::{cell::RefCell, rc::Rc};
+
 use melior::ir::Module;
 use melior::pass::bufferization::create_one_shot_bufferize_pass;
 use melior::pass::conversion::{
@@ -124,4 +126,29 @@ fn fill_zero_reverse_alloca() {
         let g = unsafe { grad(x, 1.0) };
         assert!(approx(g, 2.0 * x), "x={x}: got {g}, expected {}", 2.0 * x);
     }
+}
+
+// A dynamically shaped enzyme.broadcast can't be lowered; the pass fails with the reason at the op
+// instead of leaving it behind.
+#[test]
+fn broadcast_dynamic_fails_with_reason() {
+    let ctx = create_context();
+    let diagnostics = Rc::new(RefCell::new(Vec::new()));
+    let sink = diagnostics.clone();
+    ctx.attach_diagnostic_handler(move |diagnostic| {
+        sink.borrow_mut().push(diagnostic.to_string());
+        true
+    });
+    let mut module =
+        Module::parse(&ctx, include_str!("mlir/lower/broadcast_dynamic.mlir")).expect("parse failed");
+    let pm = PassManager::new(&ctx);
+    pm.add_pass(pass::create_lower_broadcast_pass());
+
+    assert!(pm.run(&mut module).is_err(), "expected the pass to fail:\n{}", module.as_operation());
+    let diagnostics = diagnostics.borrow();
+    assert!(
+        diagnostics.iter().any(|d| d.contains("cannot lower enzyme.broadcast")
+            && d.contains("statically shaped tensor")),
+        "got {diagnostics:?}"
+    );
 }
