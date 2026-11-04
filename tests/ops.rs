@@ -8,8 +8,7 @@ use melior::ir::{
 use melior::pass::PassManager;
 use melior::Context;
 use melior_autodiff::{
-    activity_array_attribute, autodiff, batch, fwddiff, jacobian, ods, pass,
-    utility::create_context,
+    activity_array_attribute, autodiff, batch, fwddiff, ods, pass, utility::create_context,
     Activity,
 };
 
@@ -163,37 +162,6 @@ fn fwddiff_op() {
     filecheck(&module.as_operation().to_string(), SQUARE, Some("FWDDIFF"));
 }
 
-// `enzyme.jacobian` of `square`.
-fn jacobian_square<'c>(
-    ctx: &'c Context,
-    args: &[Value<'c, '_>],
-    width: i64,
-    strong_zero: bool,
-) -> Operation<'c> {
-    let f64_ty = Type::float64(ctx);
-    jacobian(
-        ctx,
-        "square",
-        args,
-        &[f64_ty],
-        &[Activity::Dup],
-        &[Activity::DupNoNeed],
-        width,
-        strong_zero,
-        Location::unknown(ctx),
-    )
-}
-
-#[test]
-fn jacobian_op() {
-    let ctx = create_context();
-    let f64_ty = Type::float64(&ctx);
-    let module = with_caller(&ctx, SQUARE, &[f64_ty, f64_ty], &[f64_ty], |args| {
-        jacobian_square(&ctx, args, 2, true)
-    });
-    filecheck(&module.as_operation().to_string(), SQUARE, Some("JACOBIAN"));
-}
-
 #[test]
 fn batch_op() {
     let ctx = create_context();
@@ -258,17 +226,4 @@ fn differentiate_pass_lowers_tensor_autodiff() {
     );
     let text = differentiate(&ctx, &mut module);
     filecheck(&text, SQUARE_TENSOR, None);
-}
-
-// enzyme.jacobian op exists in the dialect but no pass currently lowers it.
-#[test]
-#[ignore]
-fn differentiate_pass_lowers_jacobian() {
-    let ctx = create_context();
-    let f64_ty = Type::float64(&ctx);
-    let mut module = with_caller(&ctx, SQUARE, &[f64_ty, f64_ty], &[f64_ty], |args| {
-        jacobian_square(&ctx, args, 1, false)
-    });
-    let text = differentiate(&ctx, &mut module);
-    filecheck(&text, SQUARE, Some("JACOBIAN_LOWERED"));
 }

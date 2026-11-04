@@ -76,9 +76,9 @@ pub fn activity_array_attribute<'c>(
     ArrayAttribute::new(context, &attributes)
 }
 
-// `autodiff`, `fwddiff` and `jacobian` take the same arguments; each wraps its generated builder,
-// naming the function and the activities directly. `width` and `strong_zero` are left unset at
-// their defaults (1 and false), as the generated op would leave them.
+// `autodiff` and `fwddiff` take the same arguments; each wraps its generated builder, naming the
+// function and the activities directly. `width` and `strong_zero` are left unset at their defaults
+// (1 and false), as the generated op would leave them.
 macro_rules! differentiation_op {
     ($(#[$doc:meta])* $name:ident, $op:ident) => {
         $(#[$doc])*
@@ -122,11 +122,13 @@ differentiation_op!(
     fwddiff,
     ForwardDiffOperation
 );
-differentiation_op!(
-    /// Builds `enzyme.jacobian` on the function named `function`.
-    jacobian,
-    JacobianOperation
-);
+// Enzyme defines `enzyme.jacobian` but no pass implements it yet, so it's left out until one does;
+// it's still available as `ods::jacobian`.
+// differentiation_op!(
+//     /// Builds `enzyme.jacobian` on the function named `function`.
+//     jacobian,
+//     JacobianOperation
+// );
 
 /// Builds `enzyme.batch`, which calls the function named `function` on `batch_shape` copies of its
 /// arguments at once. Each operand and result has `batch_shape` prepended to the function's
