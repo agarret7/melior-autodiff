@@ -8,7 +8,10 @@
 use melior::{
     dialect::DialectHandle,
     ir::{
-        attribute::{ArrayAttribute, BoolAttribute, FlatSymbolRefAttribute, IntegerAttribute},
+        attribute::{
+            ArrayAttribute, BoolAttribute, DenseI64ArrayAttribute, FlatSymbolRefAttribute,
+            IntegerAttribute,
+        },
         r#type::IntegerType,
         Attribute, Location, Operation, Type, Value,
     },
@@ -124,3 +127,25 @@ differentiation_op!(
     jacobian,
     JacobianOperation
 );
+
+/// Builds `enzyme.batch`, which calls the function named `function` on `batch_shape` copies of its
+/// arguments at once. Each operand and result has `batch_shape` prepended to the function's
+/// type: batching `f64 -> f64` over `[4]` takes and returns `tensor<4xf64>`.
+pub fn batch<'c>(
+    context: &'c Context,
+    function: &str,
+    operands: &[Value<'c, '_>],
+    result_types: &[Type<'c>],
+    batch_shape: &[i64],
+    location: Location<'c>,
+) -> Operation<'c> {
+    ods::batch(
+        context,
+        result_types,
+        operands,
+        FlatSymbolRefAttribute::new(context, function),
+        DenseI64ArrayAttribute::new(context, batch_shape),
+        location,
+    )
+    .into()
+}

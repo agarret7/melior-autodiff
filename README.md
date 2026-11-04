@@ -79,7 +79,7 @@ in full, for its LLVM interface, where an `Active` argument is marked `enzyme_ou
 
 | Module | |
 |---|---|
-| `melior_autodiff` | The Enzyme dialect: `dialect_handle()`, a melior `DialectHandle`; `autodiff`, `fwddiff` and `jacobian`, taking a function name and `&[Activity]`; and `activity_attribute` / `activity_array_attribute` |
+| `melior_autodiff` | The Enzyme dialect: `dialect_handle()`, a melior `DialectHandle`; `autodiff`, `fwddiff` and `jacobian`, taking a function name and `&[Activity]`; `batch`, taking a function name and a batch shape; and `activity_attribute` / `activity_array_attribute` |
 | `melior_autodiff::ods` | Every Enzyme op, generated from its TableGen definition the way melior generates upstream dialects: builders, typed ops and accessors |
 | `melior_autodiff::pass` | `create_differentiate_pass`, which replaces each `enzyme.autodiff` and `enzyme.fwddiff` with a call to the derivative it generates. `add_differentiate_wrapper_pass` (with `DerivativeMode`) generates the derivative of a named function instead, with no op in the source, as in the example. The rest of Enzyme's passes are `create_*_pass` or `add_*_pass`. `create_lower_fill_zero_pass` and `create_lower_broadcast_pass` are custom passes for two ops that upstream Enzyme can generate but doesn't yet lower. |
 | `melior_autodiff::utility` | `create_context()`, a context with every upstream dialect and Enzyme's; `register_dialect_extensions` for building your own registry; and `register_passes()`, so a textual pipeline can name any Enzyme pass (`enzyme`, `simplify-memref-cache`, ...) |

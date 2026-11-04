@@ -1,6 +1,6 @@
 use melior::dialect::func;
 use melior::ir::{
-    attribute::{DenseI64ArrayAttribute, FlatSymbolRefAttribute, StringAttribute, TypeAttribute},
+    attribute::{FlatSymbolRefAttribute, StringAttribute, TypeAttribute},
     operation::OperationLike,
     r#type::FunctionType,
     Block, BlockLike, Location, Module, Operation, Region, RegionLike, Type, Value,
@@ -8,7 +8,8 @@ use melior::ir::{
 use melior::pass::PassManager;
 use melior::Context;
 use melior_autodiff::{
-    activity_array_attribute, autodiff, fwddiff, jacobian, ods, pass, utility::create_context,
+    activity_array_attribute, autodiff, batch, fwddiff, jacobian, ods, pass,
+    utility::create_context,
     Activity,
 };
 
@@ -198,15 +199,7 @@ fn batch_op() {
     let ctx = create_context();
     let tensor_ty = Type::parse(&ctx, "tensor<4xf64>").unwrap();
     let module = with_caller(&ctx, SQUARE, &[tensor_ty], &[tensor_ty], |args| {
-        ods::batch(
-            &ctx,
-            &[tensor_ty],
-            args,
-            symbol(&ctx, "square"),
-            DenseI64ArrayAttribute::new(&ctx, &[4]),
-            Location::unknown(&ctx),
-        )
-        .into()
+        batch(&ctx, "square", args, &[tensor_ty], &[4], Location::unknown(&ctx))
     });
     filecheck(&module.as_operation().to_string(), SQUARE, Some("BATCH"));
 }
