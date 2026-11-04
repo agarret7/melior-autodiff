@@ -184,15 +184,39 @@ fn lower_broadcast(op: OperationRef, rewriter: &PatternRewriter) -> Result<(), E
 
     let input_type = RankedTensorType::try_from(input.r#type())
         .map_err(|_| Error::TypeExpected("ranked tensor", input.r#type().to_string()))?;
-    if !result_type.has_static_shape() {
-        return Err(Error::TypeExpected("statically shaped tensor", result_type.to_string()));
-    }
     // The added dims are the leading ones.
-    let added = (result_type.rank() - input_type.rank()) as i64;
-    let dimensions: Vec<i64> = (0..added).collect();
+    let added = result_type.rank() - input_type.rank();
+    let dimensions: Vec<i64> = (0..added as i64).collect();
+
+    // `shape` fixes the added dims; each dynamic dim after them takes its size from the input.
+    let mut dynamic = Vec::new();
+    for dim in 0..result_type.rank() {
+        // melior's `dim_size` returns a `DimSize` it doesn't export, so ask MLIR directly.
+        if unsafe { mlir_sys::mlirShapedTypeIsDynamicDim(result_type.to_raw(), dim as isize) } {
+            if dim < added {
+                return Err(Error::TypeExpected(
+                    "tensor with static leading (batch) dims",
+                    result_type.to_string(),
+                ));
+            }
+            dynamic.push(dim - added);
+        }
+    }
 
     rewriter.set_insertion_point_before(op);
-    let empty = rewriter.insert(tensor::empty(ctx, result_type.into(), &[], loc).into());
+    let mut sizes = Vec::new();
+    for dim in dynamic {
+        let index = rewriter.insert(arith::constant(
+            ctx,
+            IntegerAttribute::new(Type::index(ctx), dim as i64).into(),
+            loc,
+        ));
+        let size = rewriter.insert(
+            tensor::dim(ctx, Type::index(ctx), input, index.result(0)?.into(), loc).into(),
+        );
+        sizes.push(size.result(0)?.into());
+    }
+    let empty = rewriter.insert(tensor::empty(ctx, result_type.into(), &sizes, loc).into());
     let broadcast = linalg_named(
         linalg::broadcast(
             ctx,

@@ -128,10 +128,44 @@ fn fill_zero_reverse_alloca() {
     }
 }
 
-// A dynamically shaped enzyme.broadcast can't be lowered; the pass fails with the reason at the op
-// instead of leaving it behind.
+// The same width-2 forward mode over a dynamically sized tensor<?xf64>: Enzyme now emits a dynamic
+// enzyme.broadcast, which lowers with the size taken from the input.
 #[test]
-fn broadcast_dynamic_fails_with_reason() {
+fn broadcast_width2_dynamic_fwddiff() {
+    let engine = compile(include_str!("mlir/lower/broadcast_width2_dynamic.mlir"));
+    type Jvp2 = unsafe extern "C" fn(*mut MemRef1, *mut MemRef2, *mut MemRef2);
+    let jvp2: Jvp2 = unsafe { std::mem::transmute(engine.lookup("_mlir_ciface_jvp2_dynamic")) };
+
+    let mut x = [1.0, 2.0, 3.0];
+    let mut dx = [[1.0, 1.0, 1.0], [1.0, -1.0, 0.5]];
+    let mut out = [[0.0; 3]; 2];
+    unsafe { jvp2(&mut MemRef1::new(&mut x), &mut MemRef2::new(&mut dx), &mut MemRef2::new(&mut out)) };
+    let expected = [[2.0, 4.0, 6.0], [2.0, -4.0, 3.0]];
+    assert!(
+        out.iter().flatten().zip(expected.iter().flatten()).all(|(a, b)| approx(*a, *b)),
+        "got {out:?}, expected {expected:?}"
+    );
+}
+
+// Broadcasting a dynamically sized tensor<?xf64> to tensor<2x?xf64>: the result's dynamic dim takes
+// its size from the input, so each of the two rows is a copy of the input.
+#[test]
+fn broadcast_dynamic_runs() {
+    let engine = compile(include_str!("mlir/lower/broadcast_dynamic.mlir"));
+    type Broadcast = unsafe extern "C" fn(*mut MemRef1, *mut MemRef2);
+    let broadcast: Broadcast =
+        unsafe { std::mem::transmute(engine.lookup("_mlir_ciface_broadcast")) };
+
+    let mut x = [1.0, -2.0, 0.5];
+    let mut out = [[0.0; 3]; 2];
+    unsafe { broadcast(&mut MemRef1::new(&mut x), &mut MemRef2::new(&mut out)) };
+    assert_eq!(out, [x, x]);
+}
+
+// A dynamic leading (batch) dim has nothing to take its size from, so the pass fails with the
+// reason at the op instead of leaving it behind.
+#[test]
+fn broadcast_dynamic_batch_fails_with_reason() {
     let ctx = create_context();
     let diagnostics = Rc::new(RefCell::new(Vec::new()));
     let sink = diagnostics.clone();
@@ -140,7 +174,8 @@ fn broadcast_dynamic_fails_with_reason() {
         true
     });
     let mut module =
-        Module::parse(&ctx, include_str!("mlir/lower/broadcast_dynamic.mlir")).expect("parse failed");
+        Module::parse(&ctx, include_str!("mlir/lower/broadcast_dynamic_batch.mlir"))
+            .expect("parse failed");
     let pm = PassManager::new(&ctx);
     pm.add_pass(pass::create_lower_broadcast_pass());
 
@@ -148,7 +183,7 @@ fn broadcast_dynamic_fails_with_reason() {
     let diagnostics = diagnostics.borrow();
     assert!(
         diagnostics.iter().any(|d| d.contains("cannot lower enzyme.broadcast")
-            && d.contains("statically shaped tensor")),
+            && d.contains("static leading (batch) dims")),
         "got {diagnostics:?}"
     );
 }
