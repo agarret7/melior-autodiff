@@ -1,4 +1,7 @@
 //! Lowerings for Enzyme ops that Enzyme generates but has no pass to lower.
+//!
+//! This module is a stopgap, to be removed once Enzyme lowers these ops itself: `enzyme.fill_zero`
+//! in `convert-enzyme-to-memref`, and `enzyme.broadcast` in `enzyme-batch-to-tensor`.
 
 use std::{cell::RefCell, collections::HashMap, ffi::CString, rc::Rc};
 
