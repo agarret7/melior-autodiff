@@ -403,8 +403,8 @@ checksum = "953f07c43838f8e6f9758cab68bf5bed85465e7587ebe0b823f1bcd81978ad3a"
 
 [[package]]
 name = "melior"
-version = "0.28.2"
-source = "git+https://github.com/mlir-rs/melior?branch=main#415d8e00eb2edac46eefa16607818e8200f8f694"
+version = "0.29.1"
+source = "git+https://github.com/mlir-rs/melior?branch=main#6cd15ff2ade5add9459e74babc043449c0320c5e"
 dependencies = [
  "melior-macro",
  "mlir-sys",
@@ -422,8 +422,8 @@ dependencies = [
 
 [[package]]
 name = "melior-macro"
-version = "0.28.2"
-source = "git+https://github.com/mlir-rs/melior?branch=main#415d8e00eb2edac46eefa16607818e8200f8f694"
+version = "0.29.1"
+source = "git+https://github.com/mlir-rs/melior?branch=main#6cd15ff2ade5add9459e74babc043449c0320c5e"
 dependencies = [
  "comrak",
  "convert_case",
