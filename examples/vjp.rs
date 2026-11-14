@@ -18,7 +18,7 @@ use melior::{
     ir::{r#type::MemRefType, BlockLike, Location, Module, Type},
     pass::PassManager,
 };
-use melior_autodiff::{autodiff, pass, utility::create_context, Activity};
+use melior_autodiff::{autodiff, fwddiff, pass, utility::create_context, Activity};
 
 const SOURCE: &str = r#"
 module {
@@ -77,6 +77,40 @@ fn main() {
         ));
     });
 
+    // Forward mode on the same @f, for the check at the end: `y`'s tangent receives J·v.
+    //
+    // func.func @jvp_f(%x: memref<4xf64>, %v: memref<4xf64>, %jv: memref<4xf64>) {
+    //   %y = memref.alloca() : memref<4xf64>
+    //   enzyme.fwddiff @f(%x, %v, %y, %jv) <{
+    //     activity = [#enzyme<activity enzyme_dup>, #enzyme<activity enzyme_dup>],
+    //     ret_activity = []
+    //   }> : (memref<4xf64>, memref<4xf64>, memref<4xf64>, memref<4xf64>) -> ()
+    //   return
+    // }
+    common::add_function(&context, &module, "jvp_f", &[buffer, buffer, buffer], |block| {
+        let [x, v, jv] = [0, 1, 2].map(|i| block.argument(i).unwrap().into());
+        let alloca = memref::alloca(
+            &context,
+            MemRefType::try_from(buffer).unwrap(),
+            &[],
+            &[],
+            None,
+            location,
+        );
+        let y = block.append_operation(alloca).result(0).unwrap().into();
+        block.append_operation(fwddiff(
+            &context,
+            "f",
+            &[x, v, y, jv],
+            &[],
+            &[Activity::Dup, Activity::Dup],
+            &[],
+            1,
+            false,
+            location,
+        ));
+    });
+
     let pm = PassManager::new(&context);
     pass::add_enzyme_lowering(&pm);
     pm.run(&mut module).expect("differentiation failed");
@@ -104,4 +138,22 @@ fn main() {
     // The output's shadow was consumed.
     println!("u after the call: {u:?}");
     assert_eq!(u, [0.0; 4]);
+
+    // The dot-product test: for any u and v, u·(J·v) = (uᵀJ)·v. Forward and reverse mode compute the
+    // same derivative, so the two sides must agree up to rounding; if they don't, one mode is wrong.
+    // It needs no closed form for J, so it works as a check for any f.
+    let jvp_f: extern "C" fn(*const f64, *const f64, *mut f64) =
+        unsafe { common::lookup(&engine, "jvp_f") };
+    let u = [0.3, -1.0, 2.0, 0.5];
+    let v = [1.0, 0.25, -0.5, 2.0];
+    let mut jv = [0.0; 4];
+    jvp_f(x.as_ptr(), v.as_ptr(), jv.as_mut_ptr());
+    let mut u_consumed = u;
+    let mut ut_j = [0.0; 4];
+    vjp_f(x.as_ptr(), u_consumed.as_mut_ptr(), ut_j.as_mut_ptr());
+
+    let dot = |a: &[f64; 4], b: &[f64; 4]| a.iter().zip(b).map(|(a, b)| a * b).sum::<f64>();
+    let (forward, reverse) = (dot(&u, &jv), dot(&ut_j, &v));
+    println!("u·(J·v) = {forward:.12}   (uᵀJ)·v = {reverse:.12}");
+    assert!((forward - reverse).abs() < 1e-12);
 }
