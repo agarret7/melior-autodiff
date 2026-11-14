@@ -71,9 +71,14 @@ Each argument and result has an *activity*, which tells Enzyme what to different
 
 Here both `%x` and the result are `Active`, so `@dsquare(x, dr)` takes the incoming gradient `dr`
 and returns `2x * dr`; pass `dr = 1.0` for the plain derivative. The passes after `enzyme-wrap`
-clean up the bookkeeping Enzyme generates. Enzyme's
+simplify the generated program. Enzyme's
 [calling convention](https://enzyme.mit.edu/getting_started/CallingConvention/) documents activities
 in full, for its LLVM interface, where an `Active` argument is marked `enzyme_out`.
+
+The [`examples/`](examples) are a good place to start; each JIT-runs a derivative and checks it.
+`activities` shows how each activity variant shapes a derivative's signature, `gradients` builds
+gradient programs from Rust, and `jvp` and `vjp` apply forward and reverse mode to arrays. Run one
+with `cargo run --example <name>`.
 
 ## What's here
 
@@ -81,7 +86,7 @@ in full, for its LLVM interface, where an `Active` argument is marked `enzyme_ou
 |---|---|
 | `melior_autodiff` | The Enzyme dialect: `dialect_handle()`, a melior `DialectHandle`; `autodiff` and `fwddiff`, taking a function name and `&[Activity]`; `batch`, taking a function name and a batch shape; and `activity_attribute` / `activity_array_attribute` |
 | `melior_autodiff::ods` | Every Enzyme op, generated from its TableGen definition the way melior generates upstream dialects: builders, typed ops and accessors |
-| `melior_autodiff::pass` | `create_differentiate_pass`, which replaces each `enzyme.autodiff` and `enzyme.fwddiff` with a call to the derivative it generates. `add_differentiate_wrapper_pass` (with `DerivativeMode`) generates the derivative of a named function instead, with no op in the source, as in the example. The rest of Enzyme's passes are `create_*_pass` or `add_*_pass`. `create_lower_fill_zero_pass` and `create_lower_broadcast_pass` are custom passes for two ops that upstream Enzyme can generate but doesn't yet lower. |
+| `melior_autodiff::pass` | `add_enzyme_lowering`, which generates the derivatives and replaces every Enzyme op with upstream MLIR, leaving the rest of the pipeline to you. `create_differentiate_pass`, which replaces each `enzyme.autodiff` and `enzyme.fwddiff` with a call to the derivative it generates. `add_differentiate_wrapper_pass` (with `DerivativeMode`) generates the derivative of a named function instead, with no op in the source, as in the example. The rest of Enzyme's passes are `create_*_pass` or `add_*_pass`. `create_lower_fill_zero_pass` and `create_lower_broadcast_pass` are custom passes for two ops that upstream Enzyme can generate but doesn't yet lower. |
 | `melior_autodiff::utility` | `create_context()`, a context with every upstream dialect and Enzyme's; `register_dialect_extensions` for building your own registry; and `register_passes()`, so a textual pipeline can name any Enzyme pass (`enzyme`, `simplify-memref-cache`, ...) |
 
 ## Build
@@ -95,13 +100,18 @@ it building against LLVM 23. Upstream targets LLVM 24, and this crate will follo
 git clone --recurse-submodules https://github.com/agarret7/melior-autodiff
 cd melior-autodiff
 
-# Build Enzyme's MLIR plugin against your LLVM 23 install
+# Build Enzyme's MLIR C API against your LLVM 23 install
 cmake -S enzyme/enzyme -B enzyme/build \
   -DLLVM_DIR=$(llvm-config --cmakedir) \
   -DENZYME_MLIR=ON \
-  -DCMAKE_BUILD_TYPE=Release
-cmake --build enzyme/build --parallel
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
+cmake --build enzyme/build --target MLIRCAPIEnzyme --parallel 4
 ```
+
+Only `MLIRCAPIEnzyme` and its dependencies are needed, not all of Enzyme. Each compile job can take a
+couple of gigabytes, so keep `--parallel` low on machines with less than about 32 GB. Use the clang
+from the same LLVM install (for example `clang-23`) if `clang` isn't it.
 
 Then point the build at LLVM 23, in `.cargo/config.toml`:
 

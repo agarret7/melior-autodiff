@@ -158,15 +158,15 @@ pub fn create_remove_unused_enzyme_ops_pass() -> Pass {
 ///
 /// For `enzyme-wrap`, add [`add_differentiate_wrapper_pass`] to `manager` first.
 ///
-/// Not yet lowered: `enzyme.concat` and `enzyme.extract`, which `enzyme-diff-batch` and some
-/// `width > 1` derivatives emit. Only `enzyme-batch-to-tensor` lowers them, and the pinned Enzyme
-/// doesn't make it available.
+/// Not lowered here: `enzyme.concat` and `enzyme.extract`, which `enzyme-diff-batch` and some
+/// `width > 1` derivatives emit. `enzyme-batch-to-tensor` lowers them; Enzyme's C API has no
+/// constructor for it, so add it to a textual pipeline if you need it.
 pub fn add_enzyme_lowering(manager: &PassManager) {
     // 1. Derivatives. Left out for now: `remove-unnecessary-enzyme-ops`, which turns Enzyme's
     //    per-iteration loop caches into buffers sized up front, since `convert-enzyme-to-memref`
-    //    then fails on the `enzyme.store` ops it leaves in reverse-mode loops. Also left out:
-    //    `simplify-memref-cache` and `add-to-op-to-split`, which the pinned Enzyme doesn't
-    //    register for textual pipelines.
+    //    then fails on the `enzyme.store` ops it leaves in reverse-mode loops. Also not added yet:
+    //    `simplify-memref-cache` and `add-to-op-to-split`, which Enzyme's C API reaches only
+    //    through textual pipelines, and which haven't been tested here.
     manager.add_pass(create_batch_pass());
     manager.add_pass(create_differentiate_pass());
     // 2. Differentiation's leftovers, which only exist once `differentiate` has run. Until Enzyme

@@ -77,8 +77,9 @@ pub fn activity_array_attribute<'c>(
 }
 
 // `autodiff` and `fwddiff` take the same arguments; each wraps its generated builder, naming the
-// function and the activities directly. `width` and `strong_zero` are left unset at their defaults
-// (1 and false), as the generated op would leave them.
+// function and the activities directly. `width` (how many tangents or cotangents at once) and
+// `strong_zero` (derivatives exactly zero where the incoming shadow is, even through infinities and
+// NaNs) are only set on the op when they differ from Enzyme's defaults, 1 and false.
 macro_rules! differentiation_op {
     ($(#[$doc:meta])* $name:ident, $op:ident) => {
         $(#[$doc])*
