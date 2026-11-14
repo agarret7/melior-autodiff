@@ -48,3 +48,24 @@ fn batch_and_cleanup_passes_are_runnable() {
     pm.run(&mut module)
         .expect("batch and cleanup passes should run on an empty module");
 }
+
+// Batches a reverse-mode gradient, the score ∇log p of a Gaussian mixture, over 8 points, and checks
+// each against the closed form. Ignored because enzyme-batch asserts on scalar constants like
+// `arith.constant 0.5 : f64`: its batch rule for `arith.constant` only handles tensor constants
+// whose elements are all equal. The assertion aborts this test binary when it runs.
+#[test]
+#[ignore = "enzyme-batch asserts on scalar arith.constant ops"]
+fn batch_of_gradient_runs() {
+    let engine = compile(include_str!("mlir/batch/score.mlir"));
+    let scores: extern "C" fn(*const f64, *mut f64) = unsafe { lookup(&engine, "scores") };
+
+    let xs = [-3.0, -2.0, -1.0, -0.5, 0.0, 0.5, 1.0, 3.0];
+    let mut out = [0.0; 8];
+    scores(xs.as_ptr(), out.as_mut_ptr());
+    // d/dx log(N(x; 2, 1) + N(x; -2, 1)) = (-(x-2) pa - (x+2) pb) / (pa + pb).
+    for (x, g) in xs.iter().zip(out) {
+        let (pa, pb) = ((-(x - 2.0) * (x - 2.0) / 2.0).exp(), (-(x + 2.0) * (x + 2.0) / 2.0).exp());
+        let expected = (-(x - 2.0) * pa - (x + 2.0) * pb) / (pa + pb);
+        assert!((g - expected).abs() < 1e-9, "x = {x}: got {g}, expected {expected}");
+    }
+}
