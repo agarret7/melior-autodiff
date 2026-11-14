@@ -30,7 +30,7 @@ fn with_caller<'c>(
         .expect("missing test file");
     let module = Module::parse(ctx, &src).expect("parse failed");
     let loc = Location::unknown(ctx);
-    let block = Block::new(&arg_types.iter().map(|&t| (t, loc)).collect::<Vec<_>>());
+    let block = Block::new(arg_types, &vec![loc; arg_types.len()]).unwrap();
     {
         let args = (0..arg_types.len())
             .map(|i| block.argument(i).unwrap().into())
@@ -178,7 +178,7 @@ fn autodiff_accessors() {
     let ctx = create_context();
     let f64_ty = Type::float64(&ctx);
     let loc = Location::unknown(&ctx);
-    let block = Block::new(&[(f64_ty, loc), (f64_ty, loc)]);
+    let block = Block::new(&[f64_ty, f64_ty], &[loc, loc]).unwrap();
     let args = [block.argument(0).unwrap().into(), block.argument(1).unwrap().into()];
     let op = autodiff_square(&ctx, &args, 2, true);
     let op = ods::AutoDiffOperation::try_from(op).expect("not an enzyme.autodiff");

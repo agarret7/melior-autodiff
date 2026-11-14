@@ -63,7 +63,7 @@ pub fn create_lower_broadcast_pass() -> Pass {
     )
 }
 
-type Lowering = fn(OperationRef, &PatternRewriter) -> Result<(), Error>;
+type Lowering = for<'c> fn(OperationRef<'c, '_>, &PatternRewriter<'c, '_>) -> Result<(), Error>;
 
 // A pass that rewrites every `op_name` op with `lower`. Any op it can't lower is reported as an
 // error at that op, and the pass fails.
@@ -83,7 +83,8 @@ fn pattern_pass(
             let context = op.context();
             let ctx = unsafe { context.to_ref() };
 
-            // A failed match discards its error, so keep each op's reason for the report below.
+            // A pattern only reports whether it matched, so keep each op's reason for the report
+            // below.
             let reasons = Rc::new(RefCell::new(HashMap::new()));
             let recorded = reasons.clone();
             let pattern = create_op_rewrite_pattern(
@@ -97,15 +98,18 @@ fn pattern_pass(
                         Ok(()) => recorded.borrow_mut().remove(&key),
                         Err(error) => recorded.borrow_mut().insert(key, error.to_string()),
                     };
-                    result
+                    result.is_ok()
                 },
                 generated_names,
             );
             let patterns = RewritePatternSet::new(ctx);
             patterns.add(pattern);
+            // The pass manager hands this pass `op` to transform, so borrowing it mutably for the
+            // driver is sound; nothing else holds a handle into it while the pass runs.
+            let mut target = unsafe { melior::ir::operation::OperationRefMut::from_raw(op.to_raw()) };
             if apply_patterns_and_fold_greedily_with_op(
-                op,
-                patterns.freeze(),
+                &mut target,
+                &patterns.freeze(),
                 &GreedyRewriteDriverConfig::new(),
             )
             .is_err()
@@ -144,7 +148,7 @@ fn emit_error(location: Location, message: &str) {
 }
 
 // enzyme.fill_zero %m : memref<...xT>  ->  linalg.fill ins(%zero : T) outs(%m)
-fn lower_fill_zero(op: OperationRef, rewriter: &PatternRewriter) -> Result<(), Error> {
+fn lower_fill_zero<'c>(op: OperationRef<'c, '_>, rewriter: &PatternRewriter<'c, '_>) -> Result<(), Error> {
     let rewriter = rewriter.as_rewriter_base();
     let context = op.context();
     let ctx = unsafe { context.to_ref() };
@@ -167,7 +171,7 @@ fn lower_fill_zero(op: OperationRef, rewriter: &PatternRewriter) -> Result<(), E
 // enzyme.broadcast adds the leading dims in its `shape` attribute:
 //   scalar %x : T             ->  tensor.splat %x : tensor<shape x T>
 //   tensor %x : tensor<D x T> ->  linalg.broadcast ins(%x) outs(tensor.empty : tensor<shape x D x T>)
-fn lower_broadcast(op: OperationRef, rewriter: &PatternRewriter) -> Result<(), Error> {
+fn lower_broadcast<'c>(op: OperationRef<'c, '_>, rewriter: &PatternRewriter<'c, '_>) -> Result<(), Error> {
     let rewriter = rewriter.as_rewriter_base();
     let context = op.context();
     let ctx = unsafe { context.to_ref() };
