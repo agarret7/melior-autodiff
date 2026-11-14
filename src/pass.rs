@@ -34,30 +34,37 @@ impl DerivativeMode {
     }
 }
 
-/// `enzyme-wrap`: generates `outfn`, the derivative of the function `infn`, given the activity of
-/// each of its arguments and results. `outfn` is private.
+/// `enzyme-wrap`: generates the derivative of the function `infn`, given the activity of each of
+/// its arguments and results.
+///
+/// - `outfn: None` *replaces* `infn` with its derivative, under the same name, and makes it public:
+///   the way to get a derivative to look up and call after JIT compilation.
+/// - `outfn: Some(name)` adds the derivative alongside `infn` as `name`. Like the derivatives
+///   Enzyme generates for `enzyme.autodiff`, it's private, meant to be called from other functions
+///   in the module; cleanup passes like `symbol-dce` remove it if nothing calls it.
 ///
 /// Enzyme's C API has no constructor for this pass, so this appends it to `manager` as a textual
 /// pipeline element instead of returning a `Pass`. `enzyme-wrap` accepts only `Active`, `Dup`,
 /// `Const` and `DupNoNeed`; the `NoNeed` variants of `Active` and `Const` are an error here.
 ///
 /// Give one activity per argument and per result of `infn`. On a mismatch, Enzyme reports an error
-/// diagnostic but doesn't fail the pass, so no `outfn` is generated and the run still succeeds.
+/// diagnostic but doesn't fail the pass, so no derivative is generated and the run still succeeds.
 pub fn add_differentiate_wrapper_pass(
     manager: &PassManager,
     infn: &str,
-    outfn: &str,
+    outfn: Option<&str>,
     arg_activity: &[Activity],
     ret_activity: &[Activity],
     mode: DerivativeMode,
 ) -> Result<(), Error> {
-    for name in [infn, outfn] {
+    for name in std::iter::once(infn).chain(outfn) {
         if name.is_empty() || name.contains(|c: char| c.is_whitespace() || "{},=".contains(c)) {
             return Err(Error::ParsePassPipeline(format!("invalid function name {name:?}")));
         }
     }
     let element = format!(
-        "enzyme-wrap{{infn={infn} outfn={outfn} argTys={} retTys={} mode={}}}",
+        "enzyme-wrap{{infn={infn} outfn={} argTys={} retTys={} mode={}}}",
+        outfn.unwrap_or(""),
         activity_list(arg_activity)?,
         activity_list(ret_activity)?,
         mode.name(),

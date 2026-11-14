@@ -17,7 +17,7 @@ fn wrap(outfn: &str, activity: Activity, mode: DerivativeMode) -> String {
         .unwrap();
     let mut module = Module::parse(&context, &src).unwrap();
     let pm = PassManager::new(&context);
-    pass::add_differentiate_wrapper_pass(&pm, "square", outfn, &[activity], &[activity], mode)
+    pass::add_differentiate_wrapper_pass(&pm, "square", Some(outfn), &[activity], &[activity], mode)
         .unwrap();
     pm.add_pass(create_canonicalizer_pass());
     pm.add_pass(pass::create_remove_unused_enzyme_ops_pass());
@@ -47,7 +47,7 @@ fn rejects_unsupported_activity() {
         let result = pass::add_differentiate_wrapper_pass(
             &pm,
             "square",
-            "dsquare",
+            Some("dsquare"),
             &[activity],
             &[Activity::Active],
             DerivativeMode::ReverseModeCombined,
@@ -65,11 +65,35 @@ fn rejects_invalid_function_name() {
         let result = pass::add_differentiate_wrapper_pass(
             &pm,
             name,
-            "dsquare",
+            Some("dsquare"),
             &[Activity::Active],
             &[Activity::Active],
             DerivativeMode::ReverseModeCombined,
         );
         assert!(matches!(result, Err(Error::ParsePassPipeline(_))), "{name:?}: {result:?}");
     }
+}
+
+// With no `outfn`, enzyme-wrap replaces @square with its derivative under the same name, and
+// makes it public, so it can be looked up after JIT compilation.
+#[test]
+fn replace_mode_is_public() {
+    let context = create_context();
+    let src = std::fs::read_to_string(format!("{}/tests/{SQUARE}", env!("CARGO_MANIFEST_DIR")))
+        .unwrap();
+    let mut module = Module::parse(&context, &src).unwrap();
+    let pm = PassManager::new(&context);
+    pass::add_differentiate_wrapper_pass(
+        &pm,
+        "square",
+        None,
+        &[Activity::Active],
+        &[Activity::Active],
+        DerivativeMode::ReverseModeCombined,
+    )
+    .unwrap();
+    pm.run(&mut module).unwrap();
+    let text = module.as_operation().to_string();
+    let square = text.lines().find(|line| line.contains("@square(")).unwrap();
+    assert!(square.contains("func.func @square(%arg0: f64, %arg1: f64) -> f64"), "{square}");
 }

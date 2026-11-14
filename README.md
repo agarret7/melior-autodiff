@@ -35,7 +35,7 @@ let pm = PassManager::new(&context);
 pass::add_differentiate_wrapper_pass(
     &pm,
     "square",
-    "dsquare",
+    Some("dsquare"),
     &[Activity::Active],
     &[Activity::Active],
     DerivativeMode::ReverseModeCombined,
