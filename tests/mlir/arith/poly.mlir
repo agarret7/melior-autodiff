@@ -8,7 +8,7 @@ module {
     %y1 = arith.addf %y, %c1 : f64
     return %y1 : f64
   }
-  func.func @dpoly(%x: f64, %dr: f64) -> f64 attributes { llvm.emit_c_interface } {
+  func.func @dpoly(%x: f64, %dr: f64) -> f64 {
     %d = enzyme.autodiff @poly(%x, %dr) <{
       activity = [#enzyme<activity enzyme_active>],
       ret_activity = [#enzyme<activity enzyme_activenoneed>]

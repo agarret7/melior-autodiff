@@ -6,7 +6,7 @@ module {
     %r = memref.load %buf[] : memref<f64>
     return %r : f64
   }
-  func.func @dsquare_mem(%x: f64, %dr: f64) -> f64 attributes { llvm.emit_c_interface } {
+  func.func @dsquare_mem(%x: f64, %dr: f64) -> f64 {
     %d = enzyme.autodiff @square_mem(%x, %dr) <{
       activity = [#enzyme<activity enzyme_active>],
       ret_activity = [#enzyme<activity enzyme_activenoneed>]

@@ -3,8 +3,7 @@ module {
     %y = arith.mulf %x, %x : tensor<3xf64>
     return %y : tensor<3xf64>
   }
-  func.func @jvp2(%x: memref<3xf64>, %dx: memref<2x3xf64>, %out: memref<2x3xf64>)
-      attributes { llvm.emit_c_interface } {
+  func.func @jvp2(%x: memref<3xf64>, %dx: memref<2x3xf64>, %out: memref<2x3xf64>) {
     %xt = bufferization.to_tensor %x restrict : memref<3xf64> to tensor<3xf64>
     %dxt = bufferization.to_tensor %dx restrict : memref<2x3xf64> to tensor<2x3xf64>
     %r = enzyme.fwddiff @square(%xt, %dxt) <{

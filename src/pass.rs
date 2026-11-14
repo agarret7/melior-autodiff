@@ -140,6 +140,36 @@ pub fn create_remove_unused_enzyme_ops_pass() -> Pass {
     unsafe { Pass::from_raw_fn(sys::enzymeCreateRemoveUnusedEnzymeOpsPass) }
 }
 
+/// Adds the passes that replace every Enzyme op in a module with upstream MLIR:
+///
+/// 1. Generates the derivatives: replaces `enzyme.batch`, `enzyme.autodiff` and `enzyme.fwddiff`
+///    with calls to the functions Enzyme generates, which are left as private functions.
+/// 2. Lowers what differentiation leaves behind: `enzyme.fill_zero` and `enzyme.broadcast`, with
+///    this crate's stopgap passes, then Enzyme's gradient and cache ops to memrefs.
+///
+/// Afterwards the module uses only upstream dialects, including `linalg`.
+///
+/// For `enzyme-wrap`, add [`add_differentiate_wrapper_pass`] to `manager` first.
+///
+/// Not yet lowered: `enzyme.concat` and `enzyme.extract`, which `enzyme-diff-batch` and some
+/// `width > 1` derivatives emit. Only `enzyme-batch-to-tensor` lowers them, and the pinned Enzyme
+/// doesn't make it available.
+pub fn add_enzyme_lowering(manager: &PassManager) {
+    // 1. Derivatives. Left out for now: `remove-unnecessary-enzyme-ops`, which turns Enzyme's
+    //    per-iteration loop caches into buffers sized up front, since `convert-enzyme-to-memref`
+    //    then fails on the `enzyme.store` ops it leaves in reverse-mode loops. Also left out:
+    //    `simplify-memref-cache` and `add-to-op-to-split`, which the pinned Enzyme doesn't
+    //    register for textual pipelines.
+    manager.add_pass(create_batch_pass());
+    manager.add_pass(create_differentiate_pass());
+    // 2. Differentiation's leftovers, which only exist once `differentiate` has run. Until Enzyme
+    //    lowers `fill_zero` itself, in `convert-enzyme-to-memref`, it has to be lowered first,
+    //    since that pass fails on it.
+    manager.add_pass(create_lower_fill_zero_pass());
+    manager.add_pass(create_lower_broadcast_pass());
+    manager.add_pass(create_enzyme_ops_to_mem_ref_pass());
+}
+
 /// `enzyme-batch`: replaces `enzyme.batch` with a call to a batched copy of the function.
 pub fn create_batch_pass() -> Pass {
     unsafe { Pass::from_raw_fn(sys::enzymeCreateBatchPass) }

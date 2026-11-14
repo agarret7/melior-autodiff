@@ -1,25 +1,11 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use melior::pass::conversion::{
-    create_reconcile_unrealized_casts, create_scf_to_control_flow, create_to_llvm,
-};
-use melior::pass::transform::{
-    create_canonicalizer_pass, create_cse_pass, create_inliner_pass, create_symbol_dce_pass,
-};
 use melior::pass::PassManager;
 use melior::{ir::Module, ExecutionEngine};
-use melior_autodiff::{pass, utility::create_context};
+use melior_autodiff::utility::create_context;
 
-fn add_lowering_passes(pm: &PassManager<'_>) {
-    pm.add_pass(pass::create_differentiate_pass());
-    pm.add_pass(pass::create_enzyme_ops_to_mem_ref_pass());
-    pm.add_pass(create_inliner_pass());
-    pm.add_pass(create_canonicalizer_pass());
-    pm.add_pass(create_cse_pass());
-    pm.add_pass(create_symbol_dce_pass());
-    pm.add_pass(create_scf_to_control_flow());
-    pm.add_pass(create_to_llvm());
-    pm.add_pass(create_reconcile_unrealized_casts());
-}
+#[path = "../tests/common/mod.rs"]
+mod common;
+use common::add_descriptor_lowering as add_lowering_passes;
 
 // x^2 — minimal function, isolates pipeline overhead
 const SQUARE_MODULE: &str = r#"

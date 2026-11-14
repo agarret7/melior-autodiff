@@ -3,8 +3,7 @@ module {
     %y = arith.mulf %x, %x : f64
     return %y : f64
   }
-  func.func @jvp2(%x: f64, %d0: f64, %d1: f64, %out: memref<2xf64>)
-      attributes { llvm.emit_c_interface } {
+  func.func @jvp2(%x: f64, %d0: f64, %d1: f64, %out: memref<2xf64>) {
     %dx = tensor.from_elements %d0, %d1 : tensor<2xf64>
     %r = enzyme.fwddiff @square(%x, %dx) <{
       activity = [#enzyme<activity enzyme_dup>],

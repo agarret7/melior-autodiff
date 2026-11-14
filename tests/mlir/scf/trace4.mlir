@@ -1,6 +1,5 @@
 module {
-  func.func @trace4(%A: memref<4x4xf64>) -> f64
-      attributes { llvm.emit_c_interface } {
+  func.func @trace4(%A: memref<4x4xf64>) -> f64 {
     %c0 = arith.constant 0 : index
     %c1 = arith.constant 1 : index
     %c4 = arith.constant 4 : index
@@ -12,8 +11,7 @@ module {
     }
     return %r : f64
   }
-  func.func @jvp_trace4(%A: memref<4x4xf64>, %dA: memref<4x4xf64>) -> f64
-      attributes { llvm.emit_c_interface } {
+  func.func @jvp_trace4(%A: memref<4x4xf64>, %dA: memref<4x4xf64>) -> f64 {
     %d = enzyme.fwddiff @trace4(%A, %dA) <{
       activity = [#enzyme<activity enzyme_dup>],
       ret_activity = [#enzyme<activity enzyme_dupnoneed>]

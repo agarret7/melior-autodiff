@@ -1,99 +1,25 @@
 use std::{cell::RefCell, rc::Rc};
 
 use melior::ir::Module;
-use melior::pass::bufferization::create_one_shot_bufferize_pass;
-use melior::pass::conversion::{
-    create_reconcile_unrealized_casts, create_scf_to_control_flow, create_to_llvm,
-};
-use melior::pass::linalg::{
-    create_convert_elementwise_to_linalg_pass, create_convert_linalg_to_loops_pass,
-};
-use melior::pass::transform::{
-    create_canonicalizer_pass, create_cse_pass, create_inliner_pass, create_symbol_dce_pass,
-};
 use melior::pass::PassManager;
-use melior::ExecutionEngine;
 use melior_autodiff::{pass, utility::create_context};
 
-fn compile(src: &str) -> ExecutionEngine {
-    let ctx = create_context();
-    let mut module = Module::parse(&ctx, src).expect("parse failed");
-    let pm = PassManager::new(&ctx);
-    pm.add_pass(pass::create_differentiate_pass());
-    pm.add_pass(pass::create_lower_fill_zero_pass());
-    pm.add_pass(pass::create_lower_broadcast_pass());
-    pm.add_pass(pass::create_enzyme_ops_to_mem_ref_pass());
-    pm.add_pass(create_inliner_pass());
-    pm.add_pass(create_canonicalizer_pass());
-    pm.add_pass(create_cse_pass());
-    pm.add_pass(create_symbol_dce_pass());
-    pm.add_pass(create_convert_elementwise_to_linalg_pass());
-    pm.add_pass(create_one_shot_bufferize_pass());
-    pm.add_pass(create_convert_linalg_to_loops_pass());
-    pm.add_pass(create_scf_to_control_flow());
-    pm.add_pass(create_to_llvm());
-    pm.add_pass(create_reconcile_unrealized_casts());
-    if let Err(e) = pm.run(&mut module) {
-        panic!("lowering failed: {e}\n{}", module.as_operation());
-    }
-    ExecutionEngine::new(&module, 2, &[], false, false)
-}
-
-fn approx(a: f64, b: f64) -> bool {
-    (a - b).abs() < 1e-6
-}
-
-#[repr(C)]
-struct MemRef1 {
-    allocated: *mut f64,
-    aligned: *mut f64,
-    offset: i64,
-    sizes: [i64; 1],
-    strides: [i64; 1],
-}
-
-impl MemRef1 {
-    fn new<const N: usize>(data: &mut [f64; N]) -> Self {
-        MemRef1 {
-            allocated: data.as_mut_ptr(),
-            aligned: data.as_mut_ptr(),
-            offset: 0,
-            sizes: [N as i64],
-            strides: [1],
-        }
-    }
-}
+mod common;
+use common::{approx, compile, compile_with_descriptors, lookup};
 
 // Width-2 forward mode emits enzyme.broadcast of the scalar primal; lowered to tensor.splat.
 // d/dx x² = 2x, applied to both tangents at once.
 #[test]
 fn broadcast_width2_fwddiff() {
     let engine = compile(include_str!("mlir/lower/broadcast_width2.mlir"));
-    type Jvp2 = unsafe extern "C" fn(f64, f64, f64, *mut MemRef1);
-    let jvp2: Jvp2 = unsafe { std::mem::transmute(engine.lookup("_mlir_ciface_jvp2")) };
+    let jvp2: extern "C" fn(f64, f64, f64, *mut f64) = unsafe { lookup(&engine, "jvp2") };
 
     let mut out = [0.0; 2];
-    unsafe { jvp2(3.0, 1.0, -2.0, &mut MemRef1::new(&mut out)) };
+    jvp2(3.0, 1.0, -2.0, out.as_mut_ptr());
     assert!(
         approx(out[0], 6.0) && approx(out[1], -12.0),
         "got {out:?}, expected [6, -12]"
     );
-}
-
-#[repr(C)]
-struct MemRef2 {
-    allocated: *mut f64,
-    aligned: *mut f64,
-    offset: i64,
-    sizes: [i64; 2],
-    strides: [i64; 2],
-}
-
-impl MemRef2 {
-    fn new<const R: usize, const C: usize>(data: &mut [[f64; C]; R]) -> Self {
-        let ptr = data.as_mut_ptr().cast();
-        MemRef2 { allocated: ptr, aligned: ptr, offset: 0, sizes: [R as i64, C as i64], strides: [C as i64, 1] }
-    }
 }
 
 // Width-2 forward mode over a tensor broadcasts the tensor primal to tensor<2x3xf64>;
@@ -101,13 +27,13 @@ impl MemRef2 {
 #[test]
 fn broadcast_width2_tensor_fwddiff() {
     let engine = compile(include_str!("mlir/lower/broadcast_width2_tensor.mlir"));
-    type Jvp2 = unsafe extern "C" fn(*mut MemRef1, *mut MemRef2, *mut MemRef2);
-    let jvp2: Jvp2 = unsafe { std::mem::transmute(engine.lookup("_mlir_ciface_jvp2")) };
+    type Jvp2 = extern "C" fn(*const [f64; 3], *const [[f64; 3]; 2], *mut [[f64; 3]; 2]);
+    let jvp2: Jvp2 = unsafe { lookup(&engine, "jvp2") };
 
-    let mut x = [1.0, 2.0, 3.0];
-    let mut dx = [[1.0, 1.0, 1.0], [1.0, -1.0, 0.5]];
+    let x = [1.0, 2.0, 3.0];
+    let dx = [[1.0, 1.0, 1.0], [1.0, -1.0, 0.5]];
     let mut out = [[0.0; 3]; 2];
-    unsafe { jvp2(&mut MemRef1::new(&mut x), &mut MemRef2::new(&mut dx), &mut MemRef2::new(&mut out)) };
+    jvp2(&x, &dx, &mut out);
     let expected = [[2.0, 4.0, 6.0], [2.0, -4.0, 3.0]];
     assert!(
         out.iter().flatten().zip(expected.iter().flatten()).all(|(a, b)| approx(*a, *b)),
@@ -120,11 +46,44 @@ fn broadcast_width2_tensor_fwddiff() {
 #[test]
 fn fill_zero_reverse_alloca() {
     let engine = compile(include_str!("mlir/lower/square_mem.mlir"));
-    type Grad = unsafe extern "C" fn(f64, f64) -> f64;
-    let grad: Grad = unsafe { std::mem::transmute(engine.lookup("_mlir_ciface_dsquare_mem")) };
+    let grad: extern "C" fn(f64, f64) -> f64 = unsafe { lookup(&engine, "dsquare_mem") };
     for x in [-2.0, 0.5, 3.0] {
-        let g = unsafe { grad(x, 1.0) };
+        let g = grad(x, 1.0);
         assert!(approx(g, 2.0 * x), "x={x}: got {g}, expected {}", 2.0 * x);
+    }
+}
+
+// MLIR's descriptor for a rank-`R` memref of `f64`, as a `_mlir_ciface_` wrapper takes it. Only the
+// dynamically shaped tests need it: with static shapes, a memref is a plain pointer.
+#[repr(C)]
+struct MemRef<const R: usize> {
+    allocated: *mut f64,
+    aligned: *mut f64,
+    offset: i64,
+    sizes: [i64; R],
+    strides: [i64; R],
+}
+
+type MemRef1 = MemRef<1>;
+type MemRef2 = MemRef<2>;
+
+impl MemRef<1> {
+    fn new<const N: usize>(data: &mut [f64; N]) -> Self {
+        let ptr = data.as_mut_ptr();
+        MemRef { allocated: ptr, aligned: ptr, offset: 0, sizes: [N as i64], strides: [1] }
+    }
+}
+
+impl MemRef<2> {
+    fn new<const R: usize, const C: usize>(data: &mut [[f64; C]; R]) -> Self {
+        let ptr = data.as_mut_ptr().cast();
+        MemRef {
+            allocated: ptr,
+            aligned: ptr,
+            offset: 0,
+            sizes: [R as i64, C as i64],
+            strides: [C as i64, 1],
+        }
     }
 }
 
@@ -132,7 +91,7 @@ fn fill_zero_reverse_alloca() {
 // enzyme.broadcast, which lowers with the size taken from the input.
 #[test]
 fn broadcast_width2_dynamic_fwddiff() {
-    let engine = compile(include_str!("mlir/lower/broadcast_width2_dynamic.mlir"));
+    let engine = compile_with_descriptors(include_str!("mlir/lower/broadcast_width2_dynamic.mlir"));
     type Jvp2 = unsafe extern "C" fn(*mut MemRef1, *mut MemRef2, *mut MemRef2);
     let jvp2: Jvp2 = unsafe { std::mem::transmute(engine.lookup("_mlir_ciface_jvp2_dynamic")) };
 
@@ -151,7 +110,7 @@ fn broadcast_width2_dynamic_fwddiff() {
 // its size from the input, so each of the two rows is a copy of the input.
 #[test]
 fn broadcast_dynamic_runs() {
-    let engine = compile(include_str!("mlir/lower/broadcast_dynamic.mlir"));
+    let engine = compile_with_descriptors(include_str!("mlir/lower/broadcast_dynamic.mlir"));
     type Broadcast = unsafe extern "C" fn(*mut MemRef1, *mut MemRef2);
     let broadcast: Broadcast =
         unsafe { std::mem::transmute(engine.lookup("_mlir_ciface_broadcast")) };
