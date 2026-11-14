@@ -91,7 +91,8 @@ with `cargo run --example <name>`.
 
 ## Build
 
-Requires LLVM/MLIR 23, and the Enzyme submodule built with its MLIR plugin.
+Requires LLVM/MLIR 23, the Enzyme submodule built with its MLIR plugin, and Rust from
+[rustup](https://rustup.rs), which picks up the toolchain pinned in `rust-toolchain.toml`.
 
 The submodule tracks Enzyme's upstream `main` plus one small commit (the `llvm23` branch) that keeps
 it building against LLVM 23. Upstream targets LLVM 24, and this crate will follow once `mlir-sys` supports LLVM 24.
@@ -106,10 +107,11 @@ cmake -S enzyme/enzyme -B enzyme/build \
   -DENZYME_MLIR=ON \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
-cmake --build enzyme/build --target MLIRCAPIEnzyme --parallel 4
+cmake --build enzyme/build --target MLIRCAPIEnzyme MLIRLLVMExt --parallel 4
 ```
 
-Only `MLIRCAPIEnzyme` and its dependencies are needed, not all of Enzyme. Each compile job can take a
+Only Enzyme's MLIR C API (`MLIRCAPIEnzyme`, which builds most of the libraries this crate links) and
+its LLVM-extension dialect (`MLIRLLVMExt`) are needed, not all of Enzyme. Each compile job can take a
 couple of gigabytes, so keep `--parallel` low on machines with less than about 32 GB. Use the clang
 from the same LLVM install (for example `clang-23`) if `clang` isn't it.
 
