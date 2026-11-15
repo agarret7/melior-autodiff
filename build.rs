@@ -81,6 +81,8 @@ fn build_enzyme_bindings() {
         "cargo:rerun-if-changed={}",
         enzyme_src.join("EnzymeMLIR.h").display()
     );
+    // Pointing at another Enzyme build must relink even when neither build's libraries changed.
+    println!("cargo:rerun-if-env-changed=ENZYME_BUILD_DIR");
     // Relink when a rebuilt Enzyme library changes without a header change.
     for lib in [
         "Integrations/c/libMLIRCAPIEnzyme.a",
