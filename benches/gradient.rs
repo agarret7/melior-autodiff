@@ -1,4 +1,6 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use std::hint::black_box;
+
+use criterion::{criterion_group, criterion_main, Criterion};
 use melior::pass::PassManager;
 use melior::{ir::Module, ExecutionEngine};
 use melior_autodiff::utility::create_context;
@@ -16,10 +18,10 @@ module {
   }
   func.func @dsquare(%x: f64, %dr: f64) -> f64
       attributes { llvm.emit_c_interface } {
-    %r = enzyme.autodiff @square(%x, %dr) {
+    %r = enzyme.autodiff @square(%x, %dr) <{
       activity=[#enzyme<activity enzyme_active>],
       ret_activity=[#enzyme<activity enzyme_activenoneed>]
-    } : (f64, f64) -> f64
+    }> : (f64, f64) -> f64
     return %r : f64
   }
 }
@@ -36,10 +38,10 @@ module {
   }
   func.func @dpoly(%x: f64, %dr: f64) -> f64
       attributes { llvm.emit_c_interface } {
-    %r = enzyme.autodiff @poly(%x, %dr) {
+    %r = enzyme.autodiff @poly(%x, %dr) <{
       activity=[#enzyme<activity enzyme_active>],
       ret_activity=[#enzyme<activity enzyme_activenoneed>]
-    } : (f64, f64) -> f64
+    }> : (f64, f64) -> f64
     return %r : f64
   }
 }

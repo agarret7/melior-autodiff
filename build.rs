@@ -1,11 +1,9 @@
 use std::path::PathBuf;
 
 fn main() {
-    #[cfg(feature = "enzyme")]
     build_enzyme_bindings();
 }
 
-#[cfg(feature = "enzyme")]
 fn build_enzyme_bindings() {
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let enzyme_src = manifest.join("enzyme/enzyme/Enzyme/MLIR/Integrations/c");

@@ -21,8 +21,3 @@ criterion = { version = "0.8", features = ["html_reports"] }
 [[bench]]
 name = "gradient"
 harness = false
-
-[features]
-default = ["melior-backend", "enzyme"]
-melior-backend = []
-enzyme = []
