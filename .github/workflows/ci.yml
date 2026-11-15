@@ -22,7 +22,10 @@ jobs:
         run: |
           wget -q https://apt.llvm.org/llvm.sh
           sudo bash llvm.sh 23
-          sudo apt-get install -y libmlir-23-dev mlir-23-tools libclang-23-dev ninja-build
+          # libpolly-23-dev, zlib, zstd, libxml2 and z3: the static LLVM libraries the tblgen
+          # crate links (`llvm-config --link-static --libs --system-libs`).
+          sudo apt-get install -y libmlir-23-dev mlir-23-tools libclang-23-dev libpolly-23-dev \
+            zlib1g-dev libzstd-dev libxml2-dev libz3-dev ninja-build
 
       # Enzyme only needs rebuilding when the submodule moves.
       - name: Get the Enzyme commit
