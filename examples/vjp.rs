@@ -112,7 +112,7 @@ fn main() {
     });
 
     let pm = PassManager::new(&context);
-    pass::add_enzyme_lowering(&pm);
+    pass::add_enzyme_lowering(&pm).expect("invalid lowering pipeline");
     pm.run(&mut module).expect("differentiation failed");
     let engine = common::jit(&context, &mut module);
 
