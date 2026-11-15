@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  MLIR_SYS_230_PREFIX: /usr/lib/llvm-23
+  TABLEGEN_230_PREFIX: /usr/lib/llvm-23
+  LIBCLANG_PATH: /usr/lib/llvm-23/lib
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install LLVM and MLIR 23
+        run: |
+          wget -q https://apt.llvm.org/llvm.sh
+          sudo bash llvm.sh 23
+          sudo apt-get install -y libmlir-23-dev mlir-23-tools libclang-23-dev ninja-build
+
+      # Enzyme only needs rebuilding when the submodule moves.
+      - name: Get the Enzyme commit
+        id: enzyme
+        run: echo "commit=$(git rev-parse HEAD:enzyme)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache the Enzyme build
+        id: enzyme-cache
+        uses: actions/cache@v4
+        with:
+          path: enzyme/build
+          key: enzyme-llvm23-${{ steps.enzyme.outputs.commit }}
+
+      - name: Build Enzyme's MLIR C API
+        if: steps.enzyme-cache.outputs.cache-hit != 'true'
+        run: |
+          cmake -G Ninja -S enzyme/enzyme -B enzyme/build \
+            -DLLVM_DIR=/usr/lib/llvm-23/lib/cmake/llvm \
+            -DENZYME_MLIR=ON \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=clang-23 -DCMAKE_CXX_COMPILER=clang++-23
+          cmake --build enzyme/build --target MLIRCAPIEnzyme MLIRLLVMExt --parallel 4
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --all-targets
+
+      - name: Doctests
+        run: cargo test --doc
+
+      - name: Examples
+        run: for example in activities gradients jvp vjp; do cargo run --example "$example"; done

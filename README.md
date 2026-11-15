@@ -1,5 +1,7 @@
 # melior-autodiff
 
+[![CI](https://github.com/agarret7/melior-autodiff/actions/workflows/ci.yml/badge.svg)](https://github.com/agarret7/melior-autodiff/actions/workflows/ci.yml)
+
 Unofficial Rust/[Melior](https://github.com/mlir-rs/melior) bindings for [Enzyme](https://github.com/EnzymeAD/Enzyme)'s
 MLIR integration: pass in MLIR, run Enzyme as a melior pass, and get back the differentiated MLIR.
 
