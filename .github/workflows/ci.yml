@@ -29,9 +29,9 @@ jobs:
         id: enzyme
         run: echo "commit=$(git rev-parse HEAD:enzyme)" >> "$GITHUB_OUTPUT"
 
-      - name: Cache the Enzyme build
+      - name: Restore the Enzyme build
         id: enzyme-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: enzyme/build
           key: enzyme-llvm23-${{ steps.enzyme.outputs.commit }}
@@ -45,6 +45,14 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_C_COMPILER=clang-23 -DCMAKE_CXX_COMPILER=clang++-23
           cmake --build enzyme/build --target MLIRCAPIEnzyme MLIRLLVMExt --parallel 4
+
+      # Saved straight away, so a failure in a later step doesn't throw the build away.
+      - name: Save the Enzyme build
+        if: steps.enzyme-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: enzyme/build
+          key: enzyme-llvm23-${{ steps.enzyme.outputs.commit }}
 
       - uses: Swatinem/rust-cache@v2
 
