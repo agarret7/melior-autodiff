@@ -136,7 +136,8 @@ fn broadcast_dynamic_batch_fails_with_reason() {
         Module::parse(&ctx, include_str!("mlir/lower/broadcast_dynamic_batch.mlir"))
             .expect("parse failed");
     let pm = PassManager::new(&ctx);
-    pm.add_pass(pass::create_lower_broadcast_pass());
+    // The module has no differentiation ops, so only the broadcast lowering does anything.
+    pass::add_enzyme_lowering(&pm);
 
     assert!(pm.run(&mut module).is_err(), "expected the pass to fail:\n{}", module.as_operation());
     let diagnostics = diagnostics.borrow();

@@ -1,7 +1,7 @@
 //! Lowerings for Enzyme ops that Enzyme generates but has no pass to lower.
 //!
-//! This module is a stopgap, to be removed once Enzyme lowers these ops itself: `enzyme.fill_zero`
-//! in `convert-enzyme-to-memref`, and `enzyme.broadcast` in `enzyme-batch-to-tensor`.
+//! This module is a stopgap, to be removed once Enzyme lowers these ops itself:
+//! <https://github.com/EnzymeAD/Enzyme/issues/3884>.
 
 use std::{cell::RefCell, collections::HashMap, ffi::CString, rc::Rc};
 
@@ -32,7 +32,7 @@ static LOWER_BROADCAST: PassId = PassId;
 /// Enzyme emits `enzyme.fill_zero` to zero a memref's shadow in reverse mode, for example for a
 /// `memref.alloca`, but has no pass to lower it, and `convert-enzyme-to-memref` fails on it. Run
 /// this before `convert-enzyme-to-memref`.
-pub fn create_lower_fill_zero_pass() -> Pass {
+pub(crate) fn create_lower_fill_zero_pass() -> Pass {
     pattern_pass(
         "enzyme.fill_zero",
         lower_fill_zero,
@@ -50,7 +50,7 @@ pub fn create_lower_fill_zero_pass() -> Pass {
 ///
 /// Enzyme emits `enzyme.broadcast` when it differentiates with `width` above one, to give each
 /// tangent its own copy of a value, but has no pass to lower it. Run this after differentiating.
-pub fn create_lower_broadcast_pass() -> Pass {
+pub(crate) fn create_lower_broadcast_pass() -> Pass {
     pattern_pass(
         "enzyme.broadcast",
         lower_broadcast,
@@ -241,7 +241,7 @@ fn lower_broadcast<'c>(op: OperationRef<'c, '_>, rewriter: &PatternRewriter<'c, 
     Ok(())
 }
 
-pub(crate) fn zero_attribute<'c>(ctx: &'c Context, element: Type<'c>) -> Option<Attribute<'c>> {
+fn zero_attribute<'c>(ctx: &'c Context, element: Type<'c>) -> Option<Attribute<'c>> {
     if element.is_float() {
         Some(FloatAttribute::new(ctx, element, 0.0).into())
     } else if element.is_integer() || element.is_index() {
@@ -252,7 +252,7 @@ pub(crate) fn zero_attribute<'c>(ctx: &'c Context, element: Type<'c>) -> Option<
 }
 
 // A tensor `output` yields the filled tensor; a memref `output` is filled in place.
-pub(crate) fn linalg_fill<'c>(
+fn linalg_fill<'c>(
     ctx: &'c Context,
     value: Value<'c, '_>,
     output: Value<'c, '_>,
