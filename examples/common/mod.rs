@@ -40,7 +40,7 @@ pub fn jit(context: &Context, module: &mut Module) -> ExecutionEngine {
     if let Err(error) = pm.run(module) {
         panic!("lowering failed: {error}\n{}", module.as_operation());
     }
-    ExecutionEngine::new(module, 2, &[], false, false)
+    ExecutionEngine::new(module, 2, &[], false, false).expect("JIT compilation failed")
 }
 
 /// Appends a public `func.func @name(inputs...)` with no results to `module`. `body` fills its

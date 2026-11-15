@@ -47,7 +47,7 @@ pub fn compile(src: &str) -> ExecutionEngine {
     )
     .expect("invalid pipeline");
     run(&to_llvm, &mut module);
-    ExecutionEngine::new(&module, 2, &[], false, false)
+    ExecutionEngine::new(&module, 2, &[], false, false).expect("JIT compilation failed")
 }
 
 /// Like [`compile`], with MLIR's default calling convention instead, which dynamically shaped
@@ -59,7 +59,7 @@ pub fn compile_with_descriptors(src: &str) -> ExecutionEngine {
     let pm = PassManager::new(&ctx);
     add_descriptor_lowering(&pm);
     run(&pm, &mut module);
-    ExecutionEngine::new(&module, 2, &[], false, false)
+    ExecutionEngine::new(&module, 2, &[], false, false).expect("JIT compilation failed")
 }
 
 /// The passes [`compile_with_descriptors`] runs: to the LLVM dialect, with MLIR's default calling

@@ -107,13 +107,17 @@ fn pattern_pass(
             // The pass manager hands this pass `op` to transform, so borrowing it mutably for the
             // driver is sound; nothing else holds a handle into it while the pass runs.
             let mut target = unsafe { melior::ir::operation::OperationRefMut::from_raw(op.to_raw()) };
-            if apply_patterns_and_fold_greedily_with_op(
-                &mut target,
-                &patterns.freeze(),
-                &GreedyRewriteDriverConfig::new(),
-            )
-            .is_err()
-            {
+            // SAFETY: nothing nested in `op` is used after the driver runs: the walk below starts
+            // again from `op`, and `reasons` holds only addresses, which it compares but never
+            // follows.
+            let applied = unsafe {
+                apply_patterns_and_fold_greedily_with_op(
+                    &mut target,
+                    &patterns.freeze(),
+                    &GreedyRewriteDriverConfig::new(),
+                )
+            };
+            if applied.is_err() {
                 pass.signal_failure();
             }
 

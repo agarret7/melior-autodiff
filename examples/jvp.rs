@@ -57,7 +57,7 @@ fn main() {
             let op = ToTensorOperation::builder(&context, location)
                 .result(tensor)
                 .buffer(memref)
-                .restrict(unit)
+                .restrict(Some(unit))
                 .build();
             block.append_operation(op.into()).result(0).unwrap().into()
         });
@@ -75,8 +75,8 @@ fn main() {
         let materialize = MaterializeInDestinationOperation::builder(&context, location)
             .source(jv.result(0).unwrap().into())
             .dest(out)
-            .restrict(unit)
-            .writable(unit)
+            .restrict(Some(unit))
+            .writable(Some(unit))
             .build();
         block.append_operation(materialize.into());
     });

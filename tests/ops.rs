@@ -182,7 +182,7 @@ fn autodiff_accessors() {
     let args = [block.argument(0).unwrap().into(), block.argument(1).unwrap().into()];
     let op = autodiff_square(&ctx, &args, 2, true);
     let op = ods::AutoDiffOperation::try_from(op).expect("not an enzyme.autodiff");
-    assert_eq!(op.r#fn().unwrap().value(), "square");
+    assert_eq!(op.r#fn().unwrap().value(), Ok("square"));
     assert_eq!(op.inputs().count(), 2);
     assert_eq!(op.width().unwrap().value(), 2);
     assert!(op.strong_zero().unwrap().value());

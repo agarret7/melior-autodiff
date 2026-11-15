@@ -59,7 +59,8 @@ fn bench_compile(c: &mut Criterion) {
             add_lowering_passes(&pm);
             let mut module = Module::parse(&ctx, black_box(SQUARE_MODULE)).unwrap();
             pm.run(&mut module).unwrap();
-            let _engine = ExecutionEngine::new(&module, 2, &[], false, false);
+            let _engine = ExecutionEngine::new(&module, 2, &[], false, false)
+                .expect("JIT compilation failed");
         });
     });
 
@@ -69,7 +70,8 @@ fn bench_compile(c: &mut Criterion) {
             add_lowering_passes(&pm);
             let mut module = Module::parse(&ctx, black_box(POLY_MODULE)).unwrap();
             pm.run(&mut module).unwrap();
-            let _engine = ExecutionEngine::new(&module, 2, &[], false, false);
+            let _engine = ExecutionEngine::new(&module, 2, &[], false, false)
+                .expect("JIT compilation failed");
         });
     });
 
@@ -87,7 +89,8 @@ fn bench_execute(c: &mut Criterion) {
         add_lowering_passes(&pm);
         let mut module = Module::parse(&ctx, SQUARE_MODULE).unwrap();
         pm.run(&mut module).unwrap();
-        let engine = ExecutionEngine::new(&module, 3, &[], false, false);
+        let engine =
+            ExecutionEngine::new(&module, 3, &[], false, false).expect("JIT compilation failed");
 
         group.bench_function("dsquare", |b| {
             let mut x: f64 = 3.0;
@@ -115,7 +118,8 @@ fn bench_execute(c: &mut Criterion) {
         add_lowering_passes(&pm);
         let mut module = Module::parse(&ctx, POLY_MODULE).unwrap();
         pm.run(&mut module).unwrap();
-        let engine = ExecutionEngine::new(&module, 3, &[], false, false);
+        let engine =
+            ExecutionEngine::new(&module, 3, &[], false, false).expect("JIT compilation failed");
 
         group.bench_function("dpoly_x8", |b| {
             let mut x: f64 = 2.0;
@@ -152,7 +156,8 @@ fn bench_execute_raw(c: &mut Criterion) {
         add_lowering_passes(&pm);
         let mut module = Module::parse(&ctx, SQUARE_MODULE).unwrap();
         pm.run(&mut module).unwrap();
-        let engine = ExecutionEngine::new(&module, 3, &[], false, false);
+        let engine =
+            ExecutionEngine::new(&module, 3, &[], false, false).expect("JIT compilation failed");
 
         // invoke_packed baseline
         group.bench_function("dsquare_invoke_packed", |b| {
@@ -192,7 +197,8 @@ fn bench_execute_raw(c: &mut Criterion) {
         add_lowering_passes(&pm);
         let mut module = Module::parse(&ctx, POLY_MODULE).unwrap();
         pm.run(&mut module).unwrap();
-        let engine = ExecutionEngine::new(&module, 3, &[], false, false);
+        let engine =
+            ExecutionEngine::new(&module, 3, &[], false, false).expect("JIT compilation failed");
 
         group.bench_function("dpoly_x8_invoke_packed", |b| {
             let mut x: f64 = 2.0;
@@ -236,7 +242,8 @@ fn bench_strong_zero(c: &mut Criterion) {
     add_lowering_passes(&pm);
     let mut module = Module::parse(&ctx, SQUARE_MODULE).unwrap();
     pm.run(&mut module).unwrap();
-    let engine = ExecutionEngine::new(&module, 3, &[], false, false);
+    let engine =
+        ExecutionEngine::new(&module, 3, &[], false, false).expect("JIT compilation failed");
 
     let mut group = c.benchmark_group("strong_zero");
 

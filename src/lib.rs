@@ -95,20 +95,17 @@ macro_rules! differentiation_op {
             strong_zero: bool,
             location: Location<'c>,
         ) -> Operation<'c> {
-            let mut builder = ods::$op::builder(context, location)
+            let i64_type = IntegerType::new(context, 64).into();
+            ods::$op::builder(context, location)
                 .outputs(result_types)
                 .inputs(operands)
                 .r#fn(FlatSymbolRefAttribute::new(context, function))
                 .activity(activity_array_attribute(context, activity))
-                .ret_activity(activity_array_attribute(context, ret_activity));
-            if width != 1 {
-                let i64_type = IntegerType::new(context, 64).into();
-                builder = builder.width(IntegerAttribute::new(i64_type, width));
-            }
-            if strong_zero {
-                builder = builder.strong_zero(BoolAttribute::new(context, true));
-            }
-            builder.build().into()
+                .ret_activity(activity_array_attribute(context, ret_activity))
+                .width((width != 1).then(|| IntegerAttribute::new(i64_type, width)))
+                .strong_zero(strong_zero.then(|| BoolAttribute::new(context, true)))
+                .build()
+                .into()
         }
     };
 }
