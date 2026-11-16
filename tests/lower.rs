@@ -137,7 +137,7 @@ fn broadcast_dynamic_batch_fails_with_reason() {
             .expect("parse failed");
     let pm = PassManager::new(&ctx);
     // The module has no differentiation ops, so only the broadcast lowering does anything.
-    pass::add_enzyme_lowering(&pm).expect("invalid lowering pipeline");
+    pass::add_enzyme_lowering(&pm);
 
     assert!(pm.run(&mut module).is_err(), "expected the pass to fail:\n{}", module.as_operation());
     let diagnostics = diagnostics.borrow();

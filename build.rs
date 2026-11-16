@@ -75,10 +75,13 @@ fn build_enzyme_bindings() {
     println!("cargo:rustc-link-lib=MLIRCAPIIR");
     println!("cargo:rustc-link-lib=stdc++");
 
-    println!(
-        "cargo:rerun-if-changed={}",
-        enzyme_src.join("EnzymeMLIR.h").display()
-    );
+    for header in [
+        enzyme_src.join("EnzymeMLIR.h"),
+        enzyme_src.join("EnzymeMLIRPasses.h"),
+        enzyme_build.join("Enzyme/MLIR/Passes/Passes.capi.h.inc"),
+    ] {
+        println!("cargo:rerun-if-changed={}", header.display());
+    }
     // Pointing at another Enzyme build must relink even when neither build's libraries changed.
     println!("cargo:rerun-if-env-changed=ENZYME_BUILD_DIR");
     // Relink when a rebuilt Enzyme library changes without a header change.
@@ -99,7 +102,11 @@ fn build_enzyme_bindings() {
 
     let bindings = bindgen::Builder::default()
         .header(enzyme_src.join("EnzymeMLIR.h").to_str().unwrap())
+        // The pass constructors Enzyme generates from Passes.td, declared in an included `.inc`
+        // under the build directory.
+        .header(enzyme_src.join("EnzymeMLIRPasses.h").to_str().unwrap())
         .clang_arg(format!("-I{}", llvm_prefix.join("include").display()))
+        .clang_arg(format!("-I{}", enzyme_build.join("Enzyme/MLIR").display()))
         .clang_arg(format!(
             "-I{}",
             enzyme_build.join("Enzyme/MLIR/Dialect").display()
@@ -107,7 +114,7 @@ fn build_enzyme_bindings() {
         // Reuse mlir_sys types rather than re-generating them.
         .blocklist_type("Mlir.*")
         .raw_line("use mlir_sys::*;")
-        .allowlist_function("enzymeActivity.*|enzymeRegisterDialectExtensions|enzymeRegisterPasses|enzymeCreate.*|enzymeConvert.*|mlirGetDialectHandle__enzyme__")
+        .allowlist_function("enzymeActivity.*|enzymeRegisterDialectExtensions|enzymeCreate.*|mlirCreateEnzyme.*|mlirRegisterEnzymePasses|mlirGetDialectHandle__enzyme__")
         .allowlist_type("")
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
         .generate()

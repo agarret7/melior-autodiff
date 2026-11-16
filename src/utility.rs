@@ -15,7 +15,7 @@ pub fn register_dialect_extensions(registry: &DialectRegistry) {
 /// more than once.
 pub fn register_passes() {
     static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| unsafe { sys::enzymeRegisterPasses() });
+    ONCE.call_once(|| unsafe { sys::mlirRegisterEnzymePasses() });
 }
 
 /// A context with all upstream MLIR dialects and the Enzyme dialect loaded.

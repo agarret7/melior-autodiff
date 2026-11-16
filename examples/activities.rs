@@ -90,7 +90,7 @@ fn main() {
         pass::add_differentiate_wrapper_pass(&pm, name, None, arguments, &[result], mode)
             .expect("invalid enzyme-wrap options");
     }
-    pass::add_enzyme_lowering(&pm).expect("invalid lowering pipeline");
+    pass::add_enzyme_lowering(&pm);
     pm.run(&mut module).expect("differentiation failed");
 
     let text = module.as_operation().to_string();

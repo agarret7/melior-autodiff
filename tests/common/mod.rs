@@ -12,7 +12,7 @@ use melior_autodiff::{pass, utility::create_context};
 // Replaces the Enzyme ops, cleans up, and lowers tensors and `linalg` to loops: everything before
 // the final conversion to the LLVM dialect.
 fn add_lowering_to_loops(pm: &PassManager) {
-    pass::add_enzyme_lowering(pm).expect("invalid lowering pipeline");
+    pass::add_enzyme_lowering(pm);
     pm.add_pass(transform::create_inliner_pass());
     pm.add_pass(transform::create_canonicalizer_pass());
     pm.add_pass(transform::create_cse_pass());

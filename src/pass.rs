@@ -43,8 +43,8 @@ impl DerivativeMode {
 ///   Enzyme generates for `enzyme.autodiff`, it's private, meant to be called from other functions
 ///   in the module; cleanup passes like `symbol-dce` remove it if nothing calls it.
 ///
-/// Enzyme's C API has no constructor for this pass, so this appends it to `manager` as a textual
-/// pipeline element instead of returning a `Pass`. `enzyme-wrap` accepts only `Active`, `Dup`,
+/// Enzyme's C API can't set a pass's options, so this appends `enzyme-wrap` to `manager` as a
+/// textual pipeline element instead of returning a `Pass`. `enzyme-wrap` accepts only `Active`, `Dup`,
 /// `Const` and `DupNoNeed`; the `NoNeed` variants of `Active` and `Const` are an error here.
 ///
 /// Give one activity per argument and per result of `infn`. On a mismatch, Enzyme reports an error
@@ -69,116 +69,13 @@ pub fn add_differentiate_wrapper_pass(
         activity_list(ret_activity)?,
         mode.name(),
     );
-    add_pipeline_element(manager, &element)
-}
-
-// Enzyme's C API has no constructor for most of its passes, though it registers them all, so each of
-// these appends its pass to a `PassManager` as a textual pipeline element, with the pass's default
-// options, instead of returning a `Pass`.
-macro_rules! pipeline_pass {
-    ($(#[$doc:meta])* $name:ident, $element:literal) => {
-        $(#[$doc])*
-        ///
-        /// Enzyme's C API has no constructor for this pass, so this appends it to `manager` as a
-        /// textual pipeline element instead of returning a `Pass`.
-        pub fn $name(manager: &PassManager) -> Result<(), Error> {
-            add_pipeline_element(manager, $element)
-        }
-    };
-}
-
-pipeline_pass!(
-    /// `enzyme-simplify-math`: simplifies the arithmetic Enzyme generates, such as additions of
-    /// zero.
-    add_mathematic_simplification_pass,
-    "enzyme-simplify-math"
-);
-pipeline_pass!(
-    /// `enzyme-activity-opt`: optimizes the activities of differentiated arguments and results,
-    /// before differentiation.
-    add_enzyme_activity_opt_pass,
-    "enzyme-activity-opt"
-);
-pipeline_pass!(
-    /// `flatten-enzyme-caches`: flattens multi-dimensional cache buffers to one dimension and
-    /// lowers `enzyme.store` and `enzyme.load` to memref stores and loads.
-    add_flatten_enzyme_caches_pass,
-    "flatten-enzyme-caches"
-);
-pipeline_pass!(
-    /// `simplify-memref-cache`: rewrites caches of memrefs of caches,
-    /// `cache<memref<cache<...>>>`, to `cache<memref<...>>` where it can.
-    add_simplify_memref_cache_pass,
-    "simplify-memref-cache"
-);
-pipeline_pass!(
-    /// `enzyme-batch-to-tensor`: lowers the batching ops `enzyme.concat` and `enzyme.extract`,
-    /// which `enzyme-diff-batch` and some `width > 1` derivatives emit, to the Tensor dialect.
-    add_enzyme_batch_to_tensor_pass,
-    "enzyme-batch-to-tensor"
-);
-pipeline_pass!(
-    /// `add-to-op-to-split`: removes `enzyme.addTo` from a reverse-mode `linalg.generic` with
-    /// several outputs by duplicating the `linalg.generic` once per output.
-    add_add_to_op_to_split_pass,
-    "add-to-op-to-split"
-);
-pipeline_pass!(
-    /// `split-multi-results`: splits region ops that yield several results into one op per result.
-    add_split_multi_results_pass,
-    "split-multi-results"
-);
-pipeline_pass!(
-    /// `inline-enzyme-regions`: inlines `enzyme.autodiff` ops into `enzyme.autodiff_region` ops.
-    add_inline_enzyme_into_region_pass,
-    "inline-enzyme-regions"
-);
-pipeline_pass!(
-    /// `outline-enzyme-regions`: outlines `enzyme.autodiff_region` ops into `enzyme.autodiff` ops.
-    add_outline_enzyme_from_region_pass,
-    "outline-enzyme-regions"
-);
-pipeline_pass!(
-    /// `hoist-enzyme-regions`: hoists primal ops that don't depend on the differentiated values out
-    /// of `enzyme.autodiff_region` ops.
-    add_hoist_enzyme_from_region_pass,
-    "hoist-enzyme-regions"
-);
-pipeline_pass!(
-    /// `sink-checkpoint-views`: sinks pure views of mutable values into checkpointed loops.
-    add_sink_checkpoint_views_pass,
-    "sink-checkpoint-views"
-);
-pipeline_pass!(
-    /// `hoist-loop-allocations`: hoists per-iteration scratch buffers out of sequential loops.
-    add_hoist_loop_allocations_pass,
-    "hoist-loop-allocations"
-);
-pipeline_pass!(
-    /// `lower-affine-atomic-rmw`: lowers Enzyme's affine atomic read-modify-write ops to memref
-    /// ones.
-    add_lower_affine_atomic_rmw_pass,
-    "lower-affine-atomic-rmw"
-);
-pipeline_pass!(
-    /// `raise-llvm-ext`: raises LLVM dialect operations to Enzyme's LLVM Ext dialect.
-    add_raise_llvm_ext_pass,
-    "raise-llvm-ext"
-);
-pipeline_pass!(
-    /// `lower-llvm-ext`: lowers Enzyme's LLVM Ext dialect to the LLVM dialect.
-    add_lower_llvm_ext_pass,
-    "lower-llvm-ext"
-);
-
-// Appends an Enzyme pass, written as a textual pipeline element, to `manager`.
-fn add_pipeline_element(manager: &PassManager, element: &str) -> Result<(), Error> {
+    // A textual element names a pass through the registry.
     register_passes();
     let mut message = String::new();
     let result = unsafe {
         mlirOpPassManagerAddPipeline(
             manager.as_operation_pass_manager().to_raw(),
-            StringRef::new(element).to_raw(),
+            StringRef::new(&element).to_raw(),
             Some(append_message),
             &mut message as *mut String as *mut c_void,
         )
@@ -188,6 +85,131 @@ fn add_pipeline_element(manager: &PassManager, element: &str) -> Result<(), Erro
     }
     Ok(())
 }
+
+// Each wraps the constructor Enzyme's C API generates for a pass, which creates it with its
+// default options.
+macro_rules! enzyme_pass {
+    ($(#[$doc:meta])* $name:ident, $constructor:ident) => {
+        $(#[$doc])*
+        pub fn $name() -> Pass {
+            unsafe { Pass::from_raw_fn(sys::$constructor) }
+        }
+    };
+}
+
+enzyme_pass!(
+    /// `enzyme`: replaces `enzyme.autodiff`, `enzyme.fwddiff` and friends with calls to the
+    /// derivative functions it generates.
+    create_differentiate_pass,
+    mlirCreateEnzymeDifferentiatePass
+);
+enzyme_pass!(
+    /// `enzyme-batch`: replaces `enzyme.batch` with a call to a batched copy of the function.
+    create_batch_pass,
+    mlirCreateEnzymeBatchPass
+);
+enzyme_pass!(
+    /// `enzyme-diff-batch`: merges `enzyme.fwddiff` and `enzyme.autodiff` calls on the same
+    /// function into one batched call.
+    create_batch_diff_pass,
+    mlirCreateEnzymeBatchDiffPass
+);
+enzyme_pass!(
+    /// `enzyme-activity-opt`: optimizes the activities of differentiated arguments and results,
+    /// before differentiation.
+    create_enzyme_activity_opt_pass,
+    mlirCreateEnzymeEnzymeActivityOpt
+);
+enzyme_pass!(
+    /// `enzyme-simplify-math`: simplifies the arithmetic Enzyme generates, such as additions of
+    /// zero.
+    create_mathematic_simplification_pass,
+    mlirCreateEnzymeMathematicSimplificationPass
+);
+enzyme_pass!(
+    /// `remove-unnecessary-enzyme-ops`: where it can, replaces Enzyme's per-iteration caches and
+    /// gradient ops with plain values and buffers sized up front. Its buffers are accessed with
+    /// `enzyme.store` and `enzyme.load`, which [`create_flatten_enzyme_caches_pass`] lowers.
+    create_remove_unused_enzyme_ops_pass,
+    mlirCreateEnzymeRemoveUnusedEnzymeOpsPass
+);
+enzyme_pass!(
+    /// `flatten-enzyme-caches`: flattens multi-dimensional cache buffers to one dimension and
+    /// lowers `enzyme.store` and `enzyme.load` to memref stores and loads.
+    create_flatten_enzyme_caches_pass,
+    mlirCreateEnzymeFlattenEnzymeCachesPass
+);
+enzyme_pass!(
+    /// `simplify-memref-cache`: rewrites caches of memrefs of caches,
+    /// `cache<memref<cache<...>>>`, to `cache<memref<...>>` where it can.
+    create_simplify_memref_cache_pass,
+    mlirCreateEnzymeSimplifyMemrefCachePass
+);
+enzyme_pass!(
+    /// `enzyme-batch-to-tensor`: lowers the batching ops `enzyme.concat` and `enzyme.extract`,
+    /// which `enzyme-diff-batch` and some `width > 1` derivatives emit, to the Tensor dialect.
+    create_enzyme_batch_to_tensor_pass,
+    mlirCreateEnzymeEnzymeBatchToTensorPass
+);
+enzyme_pass!(
+    /// `convert-enzyme-to-memref`: lowers the Enzyme ops left after differentiation (gradients and
+    /// caches) to the MemRef dialect.
+    create_enzyme_ops_to_mem_ref_pass,
+    mlirCreateEnzymeEnzymeOpsToMemRefPass
+);
+enzyme_pass!(
+    /// `add-to-op-to-split`: removes `enzyme.addTo` from a reverse-mode `linalg.generic` with
+    /// several outputs by duplicating the `linalg.generic` once per output.
+    create_add_to_op_to_split_pass,
+    mlirCreateEnzymeAddToOpToSplitPass
+);
+enzyme_pass!(
+    /// `split-multi-results`: splits region ops that yield several results into one op per result.
+    create_split_multi_results_pass,
+    mlirCreateEnzymeSplitMultiResultsPass
+);
+enzyme_pass!(
+    /// `inline-enzyme-regions`: inlines `enzyme.autodiff` ops into `enzyme.autodiff_region` ops.
+    create_inline_enzyme_into_region_pass,
+    mlirCreateEnzymeInlineEnzymeIntoRegionPass
+);
+enzyme_pass!(
+    /// `outline-enzyme-regions`: outlines `enzyme.autodiff_region` ops into `enzyme.autodiff` ops.
+    create_outline_enzyme_from_region_pass,
+    mlirCreateEnzymeOutlineEnzymeFromRegionPass
+);
+enzyme_pass!(
+    /// `hoist-enzyme-regions`: hoists primal ops that don't depend on the differentiated values out
+    /// of `enzyme.autodiff_region` ops.
+    create_hoist_enzyme_from_region_pass,
+    mlirCreateEnzymeHoistEnzymeFromRegionPass
+);
+enzyme_pass!(
+    /// `sink-checkpoint-views`: sinks pure views of mutable values into checkpointed loops.
+    create_sink_checkpoint_views_pass,
+    mlirCreateEnzymeSinkCheckpointViewsPass
+);
+enzyme_pass!(
+    /// `hoist-loop-allocations`: hoists per-iteration scratch buffers out of sequential loops.
+    create_hoist_loop_allocations_pass,
+    mlirCreateEnzymeHoistLoopAllocationsPass
+);
+enzyme_pass!(
+    /// `lower-affine-atomic-rmw`: lowers Enzyme's affine atomic read-modify-write ops to memref
+    /// ones.
+    create_lower_affine_atomic_rmw_pass,
+    mlirCreateEnzymeLowerAffineAtomicRmwPass
+);
+enzyme_pass!(
+    /// `raise-llvm-ext`: raises LLVM dialect operations to Enzyme's LLVM Ext dialect.
+    create_raise_llvm_ext_pass,
+    mlirCreateEnzymeRaiseLLVMExtPass
+);
+enzyme_pass!(
+    /// `lower-llvm-ext`: lowers Enzyme's LLVM Ext dialect to the LLVM dialect.
+    create_lower_llvm_ext_pass,
+    mlirCreateEnzymeLowerLLVMExtPass
+);
 
 fn activity_list(activities: &[Activity]) -> Result<String, Error> {
     let names = activities
@@ -210,12 +232,6 @@ unsafe extern "C" fn append_message(text: MlirStringRef, data: *mut c_void) {
     (*(data as *mut String)).push_str(&String::from_utf8_lossy(text));
 }
 
-/// `enzyme`: replaces `enzyme.autodiff`, `enzyme.fwddiff` and friends with calls to the
-/// derivative functions it generates.
-pub fn create_differentiate_pass() -> Pass {
-    unsafe { Pass::from_raw_fn(sys::enzymeCreateDifferentiatePass) }
-}
-
 /// `enzyme`, running the textual pass pipeline `postpasses` on every derivative function it
 /// generates, and verifying them afterwards if `verify_post_passes` is set.
 pub fn create_differentiate_pass_with_options(postpasses: &str, verify_post_passes: bool) -> Pass {
@@ -225,19 +241,6 @@ pub fn create_differentiate_pass_with_options(postpasses: &str, verify_post_pass
             verify_post_passes,
         ))
     }
-}
-
-/// `convert-enzyme-to-memref`: lowers the Enzyme ops left after differentiation (gradients and
-/// caches) to the MemRef dialect.
-pub fn create_enzyme_ops_to_mem_ref_pass() -> Pass {
-    unsafe { Pass::from_raw_fn(sys::enzymeCreateConvertEnzymeToMemRefPass) }
-}
-
-/// `remove-unnecessary-enzyme-ops`: where it can, replaces Enzyme's per-iteration caches and
-/// gradient ops with plain values and buffers sized up front. Its buffers are accessed with
-/// `enzyme.store` and `enzyme.load`, which [`add_flatten_enzyme_caches_pass`] lowers.
-pub fn create_remove_unused_enzyme_ops_pass() -> Pass {
-    unsafe { Pass::from_raw_fn(sys::enzymeCreateRemoveUnusedEnzymeOpsPass) }
 }
 
 /// Adds the passes that replace every Enzyme op in a module with upstream MLIR:
@@ -253,31 +256,19 @@ pub fn create_remove_unused_enzyme_ops_pass() -> Pass {
 /// Afterwards the module uses only upstream dialects, including `linalg`.
 ///
 /// For `enzyme-wrap`, add [`add_differentiate_wrapper_pass`] to `manager` first.
-pub fn add_enzyme_lowering(manager: &PassManager) -> Result<(), Error> {
+pub fn add_enzyme_lowering(manager: &PassManager) {
     // 1.
     manager.add_pass(create_batch_pass());
     manager.add_pass(create_differentiate_pass());
     // 2. `remove-unnecessary-enzyme-ops` writes the buffers with `enzyme.store` and reads them with
     //    `enzyme.load`, which only `flatten-enzyme-caches` lowers.
     manager.add_pass(create_remove_unused_enzyme_ops_pass());
-    add_flatten_enzyme_caches_pass(manager)?;
+    manager.add_pass(create_flatten_enzyme_caches_pass());
     // 3. Enzyme has no lowering for `enzyme.fill_zero` or `enzyme.broadcast` (EnzymeAD/Enzyme#3884),
     //    and `convert-enzyme-to-memref` fails on any Enzyme op it can't convert, so this crate's
     //    passes lower those two first.
-    add_enzyme_batch_to_tensor_pass(manager)?;
+    manager.add_pass(create_enzyme_batch_to_tensor_pass());
     manager.add_pass(create_lower_fill_zero_pass());
     manager.add_pass(create_lower_broadcast_pass());
     manager.add_pass(create_enzyme_ops_to_mem_ref_pass());
-    Ok(())
-}
-
-/// `enzyme-batch`: replaces `enzyme.batch` with a call to a batched copy of the function.
-pub fn create_batch_pass() -> Pass {
-    unsafe { Pass::from_raw_fn(sys::enzymeCreateBatchPass) }
-}
-
-/// `enzyme-diff-batch`: merges `enzyme.fwddiff` and `enzyme.autodiff` calls on the same function
-/// into one batched call.
-pub fn create_batch_diff_pass() -> Pass {
-    unsafe { Pass::from_raw_fn(sys::enzymeCreateBatchDiffPass) }
 }

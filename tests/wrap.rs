@@ -21,7 +21,7 @@ fn wrap(outfn: &str, activity: Activity, mode: DerivativeMode) -> String {
         .unwrap();
     pm.add_pass(create_canonicalizer_pass());
     pm.add_pass(pass::create_remove_unused_enzyme_ops_pass());
-    pass::add_mathematic_simplification_pass(&pm).unwrap();
+    pm.add_pass(pass::create_mathematic_simplification_pass());
     pm.run(&mut module).expect("enzyme-wrap pipeline failed");
     module.as_operation().to_string()
 }

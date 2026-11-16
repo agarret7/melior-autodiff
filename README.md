@@ -45,7 +45,7 @@ pass::add_differentiate_wrapper_pass(
 .unwrap();
 pm.add_pass(create_canonicalizer_pass());
 pm.add_pass(pass::create_remove_unused_enzyme_ops_pass());
-pass::add_mathematic_simplification_pass(&pm).unwrap();
+pm.add_pass(pass::create_mathematic_simplification_pass());
 pm.run(&mut module).unwrap();
 
 let output = module.as_operation().to_string();
@@ -88,7 +88,7 @@ with `cargo run --example <name>`.
 |---|---|
 | `melior_autodiff` | The Enzyme dialect: `dialect_handle()`, a melior `DialectHandle`; `autodiff` and `fwddiff`, taking a function name and `&[Activity]`; `batch`, taking a function name and a batch shape; and `activity_attribute` / `activity_array_attribute` |
 | `melior_autodiff::ods` | Every Enzyme op, generated from its TableGen definition the way melior generates upstream dialects: builders, typed ops and accessors |
-| `melior_autodiff::pass` | `add_enzyme_lowering`, which generates the derivatives and replaces every Enzyme op with upstream MLIR, leaving the rest of the pipeline to you. `create_differentiate_pass`, which replaces each `enzyme.autodiff` and `enzyme.fwddiff` with a call to the derivative it generates. `add_differentiate_wrapper_pass` (with `DerivativeMode`) generates the derivative of a named function instead, with no op in the source, as in the example. The rest of Enzyme's passes are `create_*_pass` or `add_*_pass`. Upstream Enzyme can generate two ops that it doesn't yet lower, `enzyme.fill_zero` and `enzyme.broadcast`; `add_enzyme_lowering` lowers them with passes internal to this crate. |
+| `melior_autodiff::pass` | `add_enzyme_lowering`, which generates the derivatives and replaces every Enzyme op with upstream MLIR, leaving the rest of the pipeline to you. `create_differentiate_pass`, which replaces each `enzyme.autodiff` and `enzyme.fwddiff` with a call to the derivative it generates. `add_differentiate_wrapper_pass` (with `DerivativeMode`) generates the derivative of a named function instead, with no op in the source, as in the example. The rest of Enzyme's passes are `create_*_pass`, one per pass, with its default options. Upstream Enzyme can generate two ops that it doesn't yet lower, `enzyme.fill_zero` and `enzyme.broadcast`; `add_enzyme_lowering` lowers them with passes internal to this crate. |
 | `melior_autodiff::utility` | `create_context()`, a context with every upstream dialect and Enzyme's; `register_dialect_extensions` for building your own registry; and `register_passes()`, so a textual pipeline can name any Enzyme pass (`enzyme`, `simplify-memref-cache`, ...) |
 
 ## Build
