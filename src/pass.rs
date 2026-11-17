@@ -10,7 +10,7 @@ use mlir_sys::{mlirOpPassManagerAddPipeline, MlirStringRef};
 
 use crate::{sys, utility::register_passes, Activity};
 
-use crate::lower::{create_lower_broadcast_pass, create_lower_fill_zero_pass};
+use crate::lower::create_lower_broadcast_pass;
 
 /// What `enzyme-wrap` generates, named as in Enzyme.
 ///
@@ -249,9 +249,9 @@ pub fn create_differentiate_pass_with_options(postpasses: &str, verify_post_pass
 ///    with calls to the functions Enzyme generates, which are left as private functions.
 /// 2. Optimizes them: where it can, replaces Enzyme's per-iteration loop caches with buffers sized
 ///    up front, then lowers those buffers' accesses to memref loads and stores.
-/// 3. Lowers what's left: `enzyme.concat` and `enzyme.extract` to tensors, `enzyme.fill_zero` and
-///    `enzyme.broadcast` with this crate's stopgap passes, and Enzyme's gradient and cache ops to
-///    memrefs.
+/// 3. Lowers what's left: `enzyme.concat` and `enzyme.extract` to tensors, `enzyme.broadcast`
+///    with this crate's stopgap pass, and the rest, including `enzyme.fill_zero` and Enzyme's
+///    gradient and cache ops, to memrefs.
 ///
 /// Afterwards the module uses only upstream dialects, including `linalg`.
 ///
@@ -264,11 +264,10 @@ pub fn add_enzyme_lowering(manager: &PassManager) {
     //    `enzyme.load`, which only `flatten-enzyme-caches` lowers.
     manager.add_pass(create_remove_unused_enzyme_ops_pass());
     manager.add_pass(create_flatten_enzyme_caches_pass());
-    // 3. Enzyme has no lowering for `enzyme.fill_zero` or `enzyme.broadcast` (EnzymeAD/Enzyme#3884),
-    //    and `convert-enzyme-to-memref` fails on any Enzyme op it can't convert, so this crate's
-    //    passes lower those two first.
+    // 3. Enzyme has no lowering for `enzyme.broadcast` (EnzymeAD/Enzyme#3884), and
+    //    `convert-enzyme-to-memref` fails on any Enzyme op it can't convert, so this crate's pass
+    //    lowers it first.
     manager.add_pass(create_enzyme_batch_to_tensor_pass());
-    manager.add_pass(create_lower_fill_zero_pass());
     manager.add_pass(create_lower_broadcast_pass());
     manager.add_pass(create_enzyme_ops_to_mem_ref_pass());
 }

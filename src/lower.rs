@@ -1,6 +1,6 @@
-//! Lowerings for Enzyme ops that Enzyme generates but has no pass to lower.
+//! A lowering for `enzyme.broadcast`, which Enzyme generates but has no pass to lower.
 //!
-//! This module is a stopgap, to be removed once Enzyme lowers these ops itself:
+//! This module is a stopgap, to be removed once Enzyme lowers it itself:
 //! <https://github.com/EnzymeAD/Enzyme/issues/3884>.
 
 use std::{cell::RefCell, collections::HashMap, ffi::CString, rc::Rc};
@@ -12,38 +12,19 @@ use melior::{
         DialectHandle,
     },
     ir::{
-        attribute::{DenseI64ArrayAttribute, FloatAttribute, IntegerAttribute},
+        attribute::{DenseI64ArrayAttribute, IntegerAttribute},
         operation::{OperationLike, WalkOrder, WalkResult},
-        r#type::{MemRefType, RankedTensorType, ShapedTypeLike, TypeId},
-        Attribute, Location, Operation, OperationRef, Region, Type, TypeLike, Value, ValueLike,
+        r#type::{RankedTensorType, ShapedTypeLike, TypeId},
+        Location, Operation, OperationRef, Region, Type, TypeLike, ValueLike,
     },
     pass::{create_external, ExternalPass, Pass},
-    apply_patterns_and_fold_greedily_with_op, create_op_rewrite_pattern, Context, Error,
+    apply_patterns_and_fold_greedily_with_op, create_op_rewrite_pattern, Error,
     GreedyRewriteDriverConfig, PatternRewriter, RewritePatternSet,
 };
 
 #[repr(align(8))]
 struct PassId;
-static LOWER_FILL_ZERO: PassId = PassId;
 static LOWER_BROADCAST: PassId = PassId;
-
-/// `enzyme-lower-fill-zero`: lowers `enzyme.fill_zero` to `linalg.fill` with zero.
-///
-/// Enzyme emits `enzyme.fill_zero` to zero a memref's shadow in reverse mode, for example for a
-/// `memref.alloca`, but has no pass to lower it, and `convert-enzyme-to-memref` fails on it. Run
-/// this before `convert-enzyme-to-memref`.
-pub(crate) fn create_lower_fill_zero_pass() -> Pass {
-    pattern_pass(
-        "enzyme.fill_zero",
-        lower_fill_zero,
-        &["arith.constant", "linalg.fill"],
-        TypeId::create(&LOWER_FILL_ZERO),
-        "LowerFillZero",
-        "enzyme-lower-fill-zero",
-        "Lower enzyme.fill_zero to linalg.fill",
-        &[DialectHandle::arith(), DialectHandle::linalg()],
-    )
-}
 
 /// `enzyme-lower-broadcast`: lowers `enzyme.broadcast` to `tensor.splat` (scalar input) or
 /// `linalg.broadcast` (tensor input).
@@ -151,27 +132,6 @@ fn emit_error(location: Location, message: &str) {
     unsafe { mlir_sys::mlirEmitError(location.to_raw(), message.as_ptr()) };
 }
 
-// enzyme.fill_zero %m : memref<...xT>  ->  linalg.fill ins(%zero : T) outs(%m)
-fn lower_fill_zero<'c>(op: OperationRef<'c, '_>, rewriter: &PatternRewriter<'c, '_>) -> Result<(), Error> {
-    let rewriter = rewriter.as_rewriter_base();
-    let context = op.context();
-    let ctx = unsafe { context.to_ref() };
-    let loc = op.location();
-
-    let memref = op.operand(0)?;
-    let memref_type = MemRefType::try_from(memref.r#type())
-        .map_err(|_| Error::TypeExpected("memref", memref.r#type().to_string()))?;
-    let element = memref_type.element();
-    let zero = zero_attribute(ctx, element)
-        .ok_or_else(|| Error::TypeExpected("integer or float", element.to_string()))?;
-
-    rewriter.set_insertion_point_before(op);
-    let zero = rewriter.insert(arith::constant(ctx, zero, loc));
-    rewriter.insert(linalg_fill(ctx, zero.result(0)?.into(), memref, loc));
-    rewriter.erase_op(op);
-    Ok(())
-}
-
 // enzyme.broadcast adds the leading dims in its `shape` attribute:
 //   scalar %x : T             ->  tensor.splat %x : tensor<shape x T>
 //   tensor %x : tensor<D x T> ->  linalg.broadcast ins(%x) outs(tensor.empty : tensor<shape x D x T>)
@@ -243,31 +203,6 @@ fn lower_broadcast<'c>(op: OperationRef<'c, '_>, rewriter: &PatternRewriter<'c, 
     let broadcast = rewriter.insert(broadcast);
     rewriter.replace_op_with_operation(op, broadcast);
     Ok(())
-}
-
-fn zero_attribute<'c>(ctx: &'c Context, element: Type<'c>) -> Option<Attribute<'c>> {
-    if element.is_float() {
-        Some(FloatAttribute::new(ctx, element, 0.0).into())
-    } else if element.is_integer() || element.is_index() {
-        Some(IntegerAttribute::new(element, 0).into())
-    } else {
-        None
-    }
-}
-
-// A tensor `output` yields the filled tensor; a memref `output` is filled in place.
-fn linalg_fill<'c>(
-    ctx: &'c Context,
-    value: Value<'c, '_>,
-    output: Value<'c, '_>,
-    loc: Location<'c>,
-) -> melior::ir::Operation<'c> {
-    let results: Vec<Type> = if output.r#type().is_tensor() {
-        vec![output.r#type()]
-    } else {
-        vec![]
-    };
-    linalg_named(linalg::fill(ctx, &results, &[value], &[output], Region::new(), loc).into())
 }
 
 // Named linalg ops carry their body as a region even though the op fixes it; MLIR builds it.
