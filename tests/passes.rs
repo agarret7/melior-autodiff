@@ -1,7 +1,10 @@
 // Every Enzyme pass constructor builds a pass that runs.
 
 use melior::{
-    ir::Module,
+    ir::{
+        Module,
+        operation::{OperationLike, WalkOrder, WalkResult},
+    },
     pass::{Pass, PassManager},
 };
 use melior_autodiff::{pass, utility::create_context};
@@ -67,6 +70,10 @@ fn every_pass_runs() {
         ),
         ("raise-llvm-ext", pass::create_raise_llvm_ext_pass),
         ("lower-llvm-ext", pass::create_lower_llvm_ext_pass),
+        (
+            "print-activity-analysis",
+            pass::create_print_activity_analysis_pass,
+        ),
     ];
     let ctx = create_context();
     for (name, create) in constructors {
@@ -85,6 +92,53 @@ fn enzyme_lowering_runs() {
     pass::add_enzyme_lowering(&pm);
     let mut module = Module::parse(&ctx, "module {}").unwrap();
     pm.run(&mut module).unwrap();
+}
+
+// With `annotate`, the analysis is kept on the IR. In f(x) = x + 2 * 2, the constant and the
+// product of constants are inactive, and the sum with x is active.
+#[test]
+fn activity_analysis_annotates() {
+    melior_autodiff::utility::register_passes();
+    let ctx = create_context();
+    let pm = PassManager::new(&ctx);
+    melior::utility::parse_pass_pipeline(
+        pm.as_operation_pass_manager(),
+        "builtin.module(print-activity-analysis{annotate=true})",
+    )
+    .unwrap();
+    let mut module = Module::parse(
+        &ctx,
+        r#"
+        func.func @f(%x: f64) -> f64 {
+          %c = arith.constant 2.0 : f64
+          %c2 = arith.mulf %c, %c : f64
+          %y = arith.addf %x, %c2 : f64
+          return %y : f64
+        }
+        "#,
+    )
+    .unwrap();
+    pm.run(&mut module).unwrap();
+
+    let mut activity = Vec::new();
+    module.as_operation().walk(WalkOrder::PreOrder, |op| {
+        let name = op.name().as_string_ref().as_str().unwrap().to_owned();
+        if name.starts_with("arith.") {
+            let constant = op.attribute("enzyme.ici").unwrap().to_string();
+            activity.push((name, constant));
+        }
+        WalkResult::Advance
+    });
+    let expected = [
+        ("arith.constant", "true"),
+        ("arith.mulf", "true"),
+        ("arith.addf", "false"),
+    ];
+    let activity: Vec<_> = activity
+        .iter()
+        .map(|(name, constant)| (name.as_str(), constant.as_str()))
+        .collect();
+    assert_eq!(activity, expected, "(op, is constant)");
 }
 
 // `register_passes` makes every pass nameable in a textual pipeline.

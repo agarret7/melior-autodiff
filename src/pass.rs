@@ -209,6 +209,16 @@ enzyme_pass!(
     mlirCreateEnzymeLowerBinomialProgressPass
 );
 enzyme_pass!(
+    /// `print-activity-analysis`: prints, to standard output, which values and ops in each public
+    /// function Enzyme's activity analysis finds active. It takes float arguments as active,
+    /// memref and pointer arguments as duplicated, and the rest, or any argument marked
+    /// `enzyme.const`, as constant. To keep the results on the IR as attributes instead, run
+    /// `print-activity-analysis{annotate=true}` in a textual pipeline (see
+    /// [`register_passes`]).
+    create_print_activity_analysis_pass,
+    mlirCreateEnzymePrintActivityAnalysisPass
+);
+enzyme_pass!(
     /// `raise-llvm-ext`: raises LLVM dialect operations to Enzyme's LLVM Ext dialect.
     create_raise_llvm_ext_pass,
     mlirCreateEnzymeRaiseLLVMExtPass
