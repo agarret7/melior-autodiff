@@ -6,6 +6,7 @@
 use std::{cell::RefCell, collections::HashMap, ffi::CString, rc::Rc};
 
 use melior::{
+    apply_patterns_and_fold_greedily_with_op,
     dialect::{
         arith,
         ods::{linalg, tensor},
@@ -18,8 +19,7 @@ use melior::{
         Location, Operation, OperationRef, Region, Type, TypeLike, ValueLike,
     },
     pass::{create_external, ExternalPass, Pass},
-    apply_patterns_and_fold_greedily_with_op, Error, GreedyRewriteDriverConfig, PatternRewriter,
-    RewritePattern, RewritePatternSet,
+    Error, GreedyRewriteDriverConfig, PatternRewriter, RewritePattern, RewritePatternSet,
 };
 
 #[repr(align(8))]
@@ -88,7 +88,8 @@ fn pattern_pass(
             patterns.add(pattern);
             // The pass manager hands this pass `op` to transform, so borrowing it mutably for the
             // driver is sound; nothing else holds a handle into it while the pass runs.
-            let mut target = unsafe { melior::ir::operation::OperationRefMut::from_raw(op.to_raw()) };
+            let mut target =
+                unsafe { melior::ir::operation::OperationRefMut::from_raw(op.to_raw()) };
             // SAFETY: nothing nested in `op` is used after the driver runs: the walk below starts
             // again from `op`, and `reasons` holds only addresses, which it compares but never
             // follows.
@@ -110,7 +111,10 @@ fn pattern_pass(
                     let reason = reasons
                         .get(&(nested.to_raw().ptr as usize))
                         .map_or("no lowering applies", String::as_str);
-                    emit_error(nested.location(), &format!("cannot lower {op_name}: {reason}"));
+                    emit_error(
+                        nested.location(),
+                        &format!("cannot lower {op_name}: {reason}"),
+                    );
                     failed = true;
                 }
                 WalkResult::Advance
@@ -136,7 +140,10 @@ fn emit_error(location: Location, message: &str) {
 // enzyme.broadcast adds the leading dims in its `shape` attribute:
 //   scalar %x : T             ->  tensor.splat %x : tensor<shape x T>
 //   tensor %x : tensor<D x T> ->  linalg.broadcast ins(%x) outs(tensor.empty : tensor<shape x D x T>)
-fn lower_broadcast<'c>(op: OperationRef<'c, '_>, rewriter: &PatternRewriter<'c, '_>) -> Result<(), Error> {
+fn lower_broadcast<'c>(
+    op: OperationRef<'c, '_>,
+    rewriter: &PatternRewriter<'c, '_>,
+) -> Result<(), Error> {
     let rewriter = rewriter.as_rewriter_base();
     let context = op.context();
     let ctx = unsafe { context.to_ref() };
@@ -183,9 +190,8 @@ fn lower_broadcast<'c>(op: OperationRef<'c, '_>, rewriter: &PatternRewriter<'c, 
             IntegerAttribute::new(Type::index(ctx), dim as i64).into(),
             loc,
         ));
-        let size = rewriter.insert(
-            tensor::dim(ctx, Type::index(ctx), input, index.result(0)?.into(), loc).into(),
-        );
+        let size = rewriter
+            .insert(tensor::dim(ctx, Type::index(ctx), input, index.result(0)?.into(), loc).into());
         sizes.push(size.result(0)?.into());
     }
     let empty = rewriter.insert(tensor::empty(ctx, result_type.into(), &sizes, loc).into());

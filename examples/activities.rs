@@ -82,7 +82,12 @@ fn main() {
     let pm = PassManager::new(&context);
     for (name, arguments, result, mode) in [
         ("active", &[Active][..], Active, ReverseModeCombined),
-        ("constant", &[Active, Const][..], Active, ReverseModeCombined),
+        (
+            "constant",
+            &[Active, Const][..],
+            Active,
+            ReverseModeCombined,
+        ),
         ("shadow", &[Dup][..], Active, ReverseModeCombined),
         ("tangent", &[Dup][..], DupNoNeed, ForwardMode),
         ("dual", &[Dup][..], Dup, ForwardMode),
@@ -95,7 +100,10 @@ fn main() {
 
     let text = module.as_operation().to_string();
     for name in ["active", "constant", "shadow", "tangent", "dual"] {
-        let line = text.lines().find(|line| line.contains(&format!("@{name}("))).unwrap();
+        let line = text
+            .lines()
+            .find(|line| line.contains(&format!("@{name}(")))
+            .unwrap();
         println!("{}", line.trim().trim_end_matches(" {"));
     }
     println!();

@@ -14,7 +14,11 @@ use common::{approx, compile, lookup};
 const PIECEWISE: &str = include_str!("mlir/cf/piecewise.mlir");
 
 fn piecewise_derivative(x: f64) -> f64 {
-    if x > 0.0 { 2.0 * x } else { -1.0 }
+    if x > 0.0 {
+        2.0 * x
+    } else {
+        -1.0
+    }
 }
 
 #[test]
@@ -44,7 +48,11 @@ fn autodiff_through_branches() {
 const POWER: &str = include_str!("mlir/cf/power.mlir");
 
 fn power_derivative(x: f64, n: i64) -> f64 {
-    if n == 0 { 0.0 } else { n as f64 * x.powi(n as i32 - 1) }
+    if n == 0 {
+        0.0
+    } else {
+        n as f64 * x.powi(n as i32 - 1)
+    }
 }
 
 #[test]
@@ -54,7 +62,10 @@ fn fwddiff_through_a_loop() {
     for n in 0..6 {
         for x in [-1.5, 0.5, 2.0] {
             let got = fwd(x, 1.0, n);
-            assert!(approx(got, power_derivative(x, n)), "x={x}, n={n}: got {got}");
+            assert!(
+                approx(got, power_derivative(x, n)),
+                "x={x}, n={n}: got {got}"
+            );
         }
     }
 }
@@ -67,7 +78,10 @@ fn autodiff_through_a_loop() {
     for n in 0..6 {
         for x in [-1.5, 0.5, 2.0] {
             let got = rev(x, n, 1.0);
-            assert!(approx(got, power_derivative(x, n)), "x={x}, n={n}: got {got}");
+            assert!(
+                approx(got, power_derivative(x, n)),
+                "x={x}, n={n}: got {got}"
+            );
         }
     }
 }

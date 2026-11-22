@@ -19,7 +19,11 @@ fn batch_pass_lowers_batch_op() {
     pm.add_pass(pass::create_batch_pass());
     pm.run(&mut module).expect("enzyme-batch pass failed");
 
-    filecheck(&module.as_operation().to_string(), "mlir/batch/square.mlir", None);
+    filecheck(
+        &module.as_operation().to_string(),
+        "mlir/batch/square.mlir",
+        None,
+    );
 }
 
 // Batches the scalar `square` over four inputs, compiles it and runs it: each output is the
@@ -64,8 +68,14 @@ fn batch_of_gradient_runs() {
     scores(xs.as_ptr(), out.as_mut_ptr());
     // d/dx log(N(x; 2, 1) + N(x; -2, 1)) = (-(x-2) pa - (x+2) pb) / (pa + pb).
     for (x, g) in xs.iter().zip(out) {
-        let (pa, pb) = ((-(x - 2.0) * (x - 2.0) / 2.0).exp(), (-(x + 2.0) * (x + 2.0) / 2.0).exp());
+        let (pa, pb) = (
+            (-(x - 2.0) * (x - 2.0) / 2.0).exp(),
+            (-(x + 2.0) * (x + 2.0) / 2.0).exp(),
+        );
         let expected = (-(x - 2.0) * pa - (x + 2.0) * pb) / (pa + pb);
-        assert!((g - expected).abs() < 1e-9, "x = {x}: got {g}, expected {expected}");
+        assert!(
+            (g - expected).abs() < 1e-9,
+            "x = {x}: got {g}, expected {expected}"
+        );
     }
 }

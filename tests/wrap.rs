@@ -13,12 +13,19 @@ const SQUARE: &str = "mlir/wrap/square.mlir";
 // Runs enzyme-wrap on @square, then Enzyme's usual cleanup, and returns the module's text.
 fn wrap(outfn: &str, activity: Activity, mode: DerivativeMode) -> String {
     let context = create_context();
-    let src = std::fs::read_to_string(format!("{}/tests/{SQUARE}", env!("CARGO_MANIFEST_DIR")))
-        .unwrap();
+    let src =
+        std::fs::read_to_string(format!("{}/tests/{SQUARE}", env!("CARGO_MANIFEST_DIR"))).unwrap();
     let mut module = Module::parse(&context, &src).unwrap();
     let pm = PassManager::new(&context);
-    pass::add_differentiate_wrapper_pass(&pm, "square", Some(outfn), &[activity], &[activity], mode)
-        .unwrap();
+    pass::add_differentiate_wrapper_pass(
+        &pm,
+        "square",
+        Some(outfn),
+        &[activity],
+        &[activity],
+        mode,
+    )
+    .unwrap();
     pm.add_pass(create_canonicalizer_pass());
     pm.add_pass(pass::create_remove_unused_enzyme_ops_pass());
     pm.add_pass(pass::create_mathematic_simplification_pass());
@@ -28,7 +35,11 @@ fn wrap(outfn: &str, activity: Activity, mode: DerivativeMode) -> String {
 
 #[test]
 fn reverse_mode() {
-    let text = wrap("dsquare", Activity::Active, DerivativeMode::ReverseModeCombined);
+    let text = wrap(
+        "dsquare",
+        Activity::Active,
+        DerivativeMode::ReverseModeCombined,
+    );
     filecheck(&text, SQUARE, Some("REVERSE"));
 }
 
@@ -52,7 +63,10 @@ fn rejects_unsupported_activity() {
             &[Activity::Active],
             DerivativeMode::ReverseModeCombined,
         );
-        assert!(matches!(result, Err(Error::ParsePassPipeline(_))), "{activity:?}: {result:?}");
+        assert!(
+            matches!(result, Err(Error::ParsePassPipeline(_))),
+            "{activity:?}: {result:?}"
+        );
     }
 }
 
@@ -70,7 +84,10 @@ fn rejects_invalid_function_name() {
             &[Activity::Active],
             DerivativeMode::ReverseModeCombined,
         );
-        assert!(matches!(result, Err(Error::ParsePassPipeline(_))), "{name:?}: {result:?}");
+        assert!(
+            matches!(result, Err(Error::ParsePassPipeline(_))),
+            "{name:?}: {result:?}"
+        );
     }
 }
 
@@ -79,8 +96,8 @@ fn rejects_invalid_function_name() {
 #[test]
 fn replace_mode_is_public() {
     let context = create_context();
-    let src = std::fs::read_to_string(format!("{}/tests/{SQUARE}", env!("CARGO_MANIFEST_DIR")))
-        .unwrap();
+    let src =
+        std::fs::read_to_string(format!("{}/tests/{SQUARE}", env!("CARGO_MANIFEST_DIR"))).unwrap();
     let mut module = Module::parse(&context, &src).unwrap();
     let pm = PassManager::new(&context);
     pass::add_differentiate_wrapper_pass(
@@ -95,5 +112,8 @@ fn replace_mode_is_public() {
     pm.run(&mut module).unwrap();
     let text = module.as_operation().to_string();
     let square = text.lines().find(|line| line.contains("@square(")).unwrap();
-    assert!(square.contains("func.func @square(%arg0: f64, %arg1: f64) -> f64"), "{square}");
+    assert!(
+        square.contains("func.func @square(%arg0: f64, %arg1: f64) -> f64"),
+        "{square}"
+    );
 }

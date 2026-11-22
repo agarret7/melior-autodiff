@@ -36,7 +36,10 @@ fn broadcast_width2_tensor_fwddiff() {
     jvp2(&x, &dx, &mut out);
     let expected = [[2.0, 4.0, 6.0], [2.0, -4.0, 3.0]];
     assert!(
-        out.iter().flatten().zip(expected.iter().flatten()).all(|(a, b)| approx(*a, *b)),
+        out.iter()
+            .flatten()
+            .zip(expected.iter().flatten())
+            .all(|(a, b)| approx(*a, *b)),
         "got {out:?}, expected {expected:?}"
     );
 }
@@ -70,7 +73,13 @@ type MemRef2 = MemRef<2>;
 impl MemRef<1> {
     fn new<const N: usize>(data: &mut [f64; N]) -> Self {
         let ptr = data.as_mut_ptr();
-        MemRef { allocated: ptr, aligned: ptr, offset: 0, sizes: [N as i64], strides: [1] }
+        MemRef {
+            allocated: ptr,
+            aligned: ptr,
+            offset: 0,
+            sizes: [N as i64],
+            strides: [1],
+        }
     }
 }
 
@@ -98,10 +107,19 @@ fn broadcast_width2_dynamic_fwddiff() {
     let mut x = [1.0, 2.0, 3.0];
     let mut dx = [[1.0, 1.0, 1.0], [1.0, -1.0, 0.5]];
     let mut out = [[0.0; 3]; 2];
-    unsafe { jvp2(&mut MemRef1::new(&mut x), &mut MemRef2::new(&mut dx), &mut MemRef2::new(&mut out)) };
+    unsafe {
+        jvp2(
+            &mut MemRef1::new(&mut x),
+            &mut MemRef2::new(&mut dx),
+            &mut MemRef2::new(&mut out),
+        )
+    };
     let expected = [[2.0, 4.0, 6.0], [2.0, -4.0, 3.0]];
     assert!(
-        out.iter().flatten().zip(expected.iter().flatten()).all(|(a, b)| approx(*a, *b)),
+        out.iter()
+            .flatten()
+            .zip(expected.iter().flatten())
+            .all(|(a, b)| approx(*a, *b)),
         "got {out:?}, expected {expected:?}"
     );
 }
@@ -132,18 +150,26 @@ fn broadcast_dynamic_batch_fails_with_reason() {
         sink.borrow_mut().push(diagnostic.to_string());
         true
     });
-    let mut module =
-        Module::parse(&ctx, include_str!("mlir/lower/broadcast_dynamic_batch.mlir"))
-            .expect("parse failed");
+    let mut module = Module::parse(
+        &ctx,
+        include_str!("mlir/lower/broadcast_dynamic_batch.mlir"),
+    )
+    .expect("parse failed");
     let pm = PassManager::new(&ctx);
     // The module has no differentiation ops, so only the broadcast lowering does anything.
     pass::add_enzyme_lowering(&pm);
 
-    assert!(pm.run(&mut module).is_err(), "expected the pass to fail:\n{}", module.as_operation());
+    assert!(
+        pm.run(&mut module).is_err(),
+        "expected the pass to fail:\n{}",
+        module.as_operation()
+    );
     let diagnostics = diagnostics.borrow();
     assert!(
-        diagnostics.iter().any(|d| d.contains("cannot lower enzyme.broadcast")
-            && d.contains("static leading (batch) dims")),
+        diagnostics
+            .iter()
+            .any(|d| d.contains("cannot lower enzyme.broadcast")
+                && d.contains("static leading (batch) dims")),
         "got {diagnostics:?}"
     );
 }

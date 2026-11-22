@@ -52,30 +52,36 @@ fn main() {
     //   }> : (memref<4xf64>, memref<4xf64>, memref<4xf64>, memref<4xf64>) -> ()
     //   return
     // }
-    common::add_function(&context, &module, "vjp_f", &[buffer, buffer, buffer], |block| {
-        let [x, u, dx] = [0, 1, 2].map(|i| block.argument(i).unwrap().into());
-        // f's output, which the VJP doesn't return.
-        let alloca = memref::alloca(
-            &context,
-            MemRefType::try_from(buffer).unwrap(),
-            &[],
-            &[],
-            None,
-            location,
-        );
-        let y = block.append_operation(alloca).result(0).unwrap().into();
-        block.append_operation(autodiff(
-            &context,
-            "f",
-            &[x, dx, y, u],
-            &[],
-            &[Activity::Dup, Activity::Dup],
-            &[],
-            1,     // width: one cotangent at a time
-            false, // strong_zero: Enzyme's default
-            location,
-        ));
-    });
+    common::add_function(
+        &context,
+        &module,
+        "vjp_f",
+        &[buffer, buffer, buffer],
+        |block| {
+            let [x, u, dx] = [0, 1, 2].map(|i| block.argument(i).unwrap().into());
+            // f's output, which the VJP doesn't return.
+            let alloca = memref::alloca(
+                &context,
+                MemRefType::try_from(buffer).unwrap(),
+                &[],
+                &[],
+                None,
+                location,
+            );
+            let y = block.append_operation(alloca).result(0).unwrap().into();
+            block.append_operation(autodiff(
+                &context,
+                "f",
+                &[x, dx, y, u],
+                &[],
+                &[Activity::Dup, Activity::Dup],
+                &[],
+                1,     // width: one cotangent at a time
+                false, // strong_zero: Enzyme's default
+                location,
+            ));
+        },
+    );
 
     // Forward mode on the same @f, for the check at the end: `y`'s tangent receives J·v.
     //
@@ -87,29 +93,35 @@ fn main() {
     //   }> : (memref<4xf64>, memref<4xf64>, memref<4xf64>, memref<4xf64>) -> ()
     //   return
     // }
-    common::add_function(&context, &module, "jvp_f", &[buffer, buffer, buffer], |block| {
-        let [x, v, jv] = [0, 1, 2].map(|i| block.argument(i).unwrap().into());
-        let alloca = memref::alloca(
-            &context,
-            MemRefType::try_from(buffer).unwrap(),
-            &[],
-            &[],
-            None,
-            location,
-        );
-        let y = block.append_operation(alloca).result(0).unwrap().into();
-        block.append_operation(fwddiff(
-            &context,
-            "f",
-            &[x, v, y, jv],
-            &[],
-            &[Activity::Dup, Activity::Dup],
-            &[],
-            1,
-            false,
-            location,
-        ));
-    });
+    common::add_function(
+        &context,
+        &module,
+        "jvp_f",
+        &[buffer, buffer, buffer],
+        |block| {
+            let [x, v, jv] = [0, 1, 2].map(|i| block.argument(i).unwrap().into());
+            let alloca = memref::alloca(
+                &context,
+                MemRefType::try_from(buffer).unwrap(),
+                &[],
+                &[],
+                None,
+                location,
+            );
+            let y = block.append_operation(alloca).result(0).unwrap().into();
+            block.append_operation(fwddiff(
+                &context,
+                "f",
+                &[x, v, y, jv],
+                &[],
+                &[Activity::Dup, Activity::Dup],
+                &[],
+                1,
+                false,
+                location,
+            ));
+        },
+    );
 
     let pm = PassManager::new(&context);
     pass::add_enzyme_lowering(&pm);
@@ -132,7 +144,10 @@ fn main() {
     // f is elementwise, so J is diagonal: (uᵀJ)ᵢ = uᵢ f'(xᵢ) = uᵢ (1 + xᵢ) exp(xᵢ).
     for i in 0..4 {
         let expected = u_in[i] * (1.0 + x[i]) * x[i].exp();
-        println!("(uᵀJ)[{i}] = {:.6}   u (1 + x) exp(x) = {expected:.6}", dx[i]);
+        println!(
+            "(uᵀJ)[{i}] = {:.6}   u (1 + x) exp(x) = {expected:.6}",
+            dx[i]
+        );
         assert!((dx[i] - expected).abs() < 1e-12);
     }
     // The output's shadow was consumed.

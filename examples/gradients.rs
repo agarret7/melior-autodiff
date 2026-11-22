@@ -78,24 +78,30 @@ fn main() {
     //   memref.store %gy, %dy[] : memref<f64>
     //   return
     // }
-    common::add_function(&context, &module, "grad_f", &[f64_type, f64_type, scalar, scalar], |block| {
-        let [x, y, dx, dy] = [0, 1, 2, 3].map(|i| block.argument(i).unwrap().into());
-        let gradient = block.append_operation(autodiff(
-            &context,
-            "f",
-            &[x, y, one(&context, block)],
-            &[f64_type, f64_type],
-            &[Activity::Active, Activity::Active],
-            &[Activity::ActiveNoNeed],
-            1,     // width: one derivative at a time
-            false, // strong_zero: Enzyme's default
-            location,
-        ));
-        for (index, out) in [dx, dy].into_iter().enumerate() {
-            let value = gradient.result(index).unwrap().into();
-            block.append_operation(memref::store(value, out, &[], location));
-        }
-    });
+    common::add_function(
+        &context,
+        &module,
+        "grad_f",
+        &[f64_type, f64_type, scalar, scalar],
+        |block| {
+            let [x, y, dx, dy] = [0, 1, 2, 3].map(|i| block.argument(i).unwrap().into());
+            let gradient = block.append_operation(autodiff(
+                &context,
+                "f",
+                &[x, y, one(&context, block)],
+                &[f64_type, f64_type],
+                &[Activity::Active, Activity::Active],
+                &[Activity::ActiveNoNeed],
+                1,     // width: one derivative at a time
+                false, // strong_zero: Enzyme's default
+                location,
+            ));
+            for (index, out) in [dx, dy].into_iter().enumerate() {
+                let value = gradient.result(index).unwrap().into();
+                block.append_operation(memref::store(value, out, &[], location));
+            }
+        },
+    );
 
     // func.func @grad_g(%x: memref<4xf64>, %dx: memref<4xf64>, %w: memref<4xf64>) {
     //   %one = arith.constant 1.0 : f64
@@ -105,20 +111,26 @@ fn main() {
     //   }> : (memref<4xf64>, memref<4xf64>, memref<4xf64>, f64) -> ()
     //   return
     // }
-    common::add_function(&context, &module, "grad_g", &[array, array, array], |block| {
-        let [x, dx, w] = [0, 1, 2].map(|i| block.argument(i).unwrap().into());
-        block.append_operation(autodiff(
-            &context,
-            "g",
-            &[x, dx, w, one(&context, block)],
-            &[],
-            &[Activity::Dup, Activity::Const],
-            &[Activity::ActiveNoNeed],
-            1,
-            false,
-            location,
-        ));
-    });
+    common::add_function(
+        &context,
+        &module,
+        "grad_g",
+        &[array, array, array],
+        |block| {
+            let [x, dx, w] = [0, 1, 2].map(|i| block.argument(i).unwrap().into());
+            block.append_operation(autodiff(
+                &context,
+                "g",
+                &[x, dx, w, one(&context, block)],
+                &[],
+                &[Activity::Dup, Activity::Const],
+                &[Activity::ActiveNoNeed],
+                1,
+                false,
+                location,
+            ));
+        },
+    );
 
     let pm = PassManager::new(&context);
     pass::add_enzyme_lowering(&pm);
@@ -154,5 +166,8 @@ fn main() {
     // A second call without zeroing adds another gradient on top.
     grad_g(x.as_ptr(), dx.as_mut_ptr(), w.as_ptr());
     println!("after a second call without zeroing: {dx:?}");
-    assert_eq!(dx.to_vec(), expected.iter().map(|g| 2.0 * g).collect::<Vec<_>>());
+    assert_eq!(
+        dx.to_vec(),
+        expected.iter().map(|g| 2.0 * g).collect::<Vec<_>>()
+    );
 }

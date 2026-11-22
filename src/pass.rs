@@ -59,7 +59,9 @@ pub fn add_differentiate_wrapper_pass(
 ) -> Result<(), Error> {
     for name in std::iter::once(infn).chain(outfn) {
         if name.is_empty() || name.contains(|c: char| c.is_whitespace() || "{},=".contains(c)) {
-            return Err(Error::ParsePassPipeline(format!("invalid function name {name:?}")));
+            return Err(Error::ParsePassPipeline(format!(
+                "invalid function name {name:?}"
+            )));
         }
     }
     let element = format!(

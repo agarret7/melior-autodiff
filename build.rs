@@ -28,9 +28,15 @@ fn main() {
 
     // `ods::enzyme` generates the dialect's ops from its TableGen definitions here.
     let enzyme_dialect = enzyme_src.join("Enzyme/MLIR/Dialect");
-    println!("cargo:rustc-env=ENZYME_DIALECT_DIR={}", enzyme_dialect.display());
+    println!(
+        "cargo:rustc-env=ENZYME_DIALECT_DIR={}",
+        enzyme_dialect.display()
+    );
     for td in ["EnzymeOps.td", "Dialect.td", "EnzymeEnums.td"] {
-        println!("cargo:rerun-if-changed={}", enzyme_dialect.join(td).display());
+        println!(
+            "cargo:rerun-if-changed={}",
+            enzyme_dialect.join(td).display()
+        );
     }
 
     // An existing Enzyme build, or else one of the submodule, built here.
@@ -88,8 +94,14 @@ fn build_enzyme(src: &Path, llvm_prefix: &Path) -> PathBuf {
             .arg("-B")
             .arg(&build)
             .arg("-DCMAKE_BUILD_TYPE=Release")
-            .arg(format!("-DLLVM_DIR={}", llvm_prefix.join("lib/cmake/llvm").display()))
-            .arg(format!("-DMLIR_DIR={}", llvm_prefix.join("lib/cmake/mlir").display()))
+            .arg(format!(
+                "-DLLVM_DIR={}",
+                llvm_prefix.join("lib/cmake/llvm").display()
+            ))
+            .arg(format!(
+                "-DMLIR_DIR={}",
+                llvm_prefix.join("lib/cmake/mlir").display()
+            ))
             .arg("-DENZYME_MLIR=ON")
             .arg("-DENZYME_CLANG=OFF")
             .arg("-DENZYME_BC_LOADER=OFF");
@@ -108,7 +120,10 @@ fn build_enzyme(src: &Path, llvm_prefix: &Path) -> PathBuf {
     // otherwise, and fewer if Cargo runs fewer.
     println!("cargo:rerun-if-env-changed=ENZYME_BUILD_JOBS");
     let jobs = env::var("ENZYME_BUILD_JOBS").unwrap_or_else(|_| {
-        let cargo_jobs: usize = env::var("NUM_JOBS").ok().and_then(|n| n.parse().ok()).unwrap_or(1);
+        let cargo_jobs: usize = env::var("NUM_JOBS")
+            .ok()
+            .and_then(|n| n.parse().ok())
+            .unwrap_or(1);
         cargo_jobs.min(4).to_string()
     });
     run(
@@ -135,7 +150,10 @@ fn run(command: &mut Command, what: &str) {
 fn link(enzyme_build: &Path, llvm_prefix: &Path) {
     let enzyme_mlir = enzyme_build.join("Enzyme/MLIR");
     for (dir, lib) in ENZYME_LIBS {
-        println!("cargo:rustc-link-search=native={}", enzyme_mlir.join(dir).display());
+        println!(
+            "cargo:rustc-link-search=native={}",
+            enzyme_mlir.join(dir).display()
+        );
         println!("cargo:rustc-link-lib=static={lib}");
         // Relink when a rebuilt library changes without a header change.
         println!(
@@ -143,7 +161,10 @@ fn link(enzyme_build: &Path, llvm_prefix: &Path) {
             enzyme_mlir.join(dir).join(format!("lib{lib}.a")).display()
         );
     }
-    println!("cargo:rustc-link-search=native={}", llvm_prefix.join("lib").display());
+    println!(
+        "cargo:rustc-link-search=native={}",
+        llvm_prefix.join("lib").display()
+    );
     println!("cargo:rustc-link-lib=MLIRCAPIIR");
 }
 

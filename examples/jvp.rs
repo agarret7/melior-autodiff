@@ -51,35 +51,41 @@ fn main() {
     //     : (tensor<4xf64>, memref<4xf64>) -> ()
     //   return
     // }
-    common::add_function(&context, &module, "jvp_f", &[buffer, buffer, buffer], |block| {
-        let [x, v, out] = [0, 1, 2].map(|i| block.argument(i).unwrap().into());
-        let [xt, vt]: [Value; 2] = [x, v].map(|memref| {
-            let op = ToTensorOperation::builder(&context, location)
-                .result(tensor)
-                .buffer(memref)
+    common::add_function(
+        &context,
+        &module,
+        "jvp_f",
+        &[buffer, buffer, buffer],
+        |block| {
+            let [x, v, out] = [0, 1, 2].map(|i| block.argument(i).unwrap().into());
+            let [xt, vt]: [Value; 2] = [x, v].map(|memref| {
+                let op = ToTensorOperation::builder(&context, location)
+                    .result(tensor)
+                    .buffer(memref)
+                    .restrict(Some(unit))
+                    .build();
+                block.append_operation(op.into()).result(0).unwrap().into()
+            });
+            let jv = block.append_operation(fwddiff(
+                &context,
+                "f",
+                &[xt, vt],
+                &[tensor],
+                &[Activity::Dup],
+                &[Activity::DupNoNeed],
+                1,     // width: one tangent at a time
+                false, // strong_zero: Enzyme's default
+                location,
+            ));
+            let materialize = MaterializeInDestinationOperation::builder(&context, location)
+                .source(jv.result(0).unwrap().into())
+                .dest(out)
                 .restrict(Some(unit))
+                .writable(Some(unit))
                 .build();
-            block.append_operation(op.into()).result(0).unwrap().into()
-        });
-        let jv = block.append_operation(fwddiff(
-            &context,
-            "f",
-            &[xt, vt],
-            &[tensor],
-            &[Activity::Dup],
-            &[Activity::DupNoNeed],
-            1,     // width: one tangent at a time
-            false, // strong_zero: Enzyme's default
-            location,
-        ));
-        let materialize = MaterializeInDestinationOperation::builder(&context, location)
-            .source(jv.result(0).unwrap().into())
-            .dest(out)
-            .restrict(Some(unit))
-            .writable(Some(unit))
-            .build();
-        block.append_operation(materialize.into());
-    });
+            block.append_operation(materialize.into());
+        },
+    );
 
     let pm = PassManager::new(&context);
     pass::add_enzyme_lowering(&pm);

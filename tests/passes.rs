@@ -15,20 +15,56 @@ fn every_pass_runs() {
         ("enzyme-batch", pass::create_batch_pass),
         ("enzyme-diff-batch", pass::create_batch_diff_pass),
         ("enzyme-activity-opt", pass::create_enzyme_activity_opt_pass),
-        ("enzyme-simplify-math", pass::create_mathematic_simplification_pass),
-        ("remove-unnecessary-enzyme-ops", pass::create_remove_unused_enzyme_ops_pass),
-        ("flatten-enzyme-caches", pass::create_flatten_enzyme_caches_pass),
-        ("simplify-memref-cache", pass::create_simplify_memref_cache_pass),
-        ("enzyme-batch-to-tensor", pass::create_enzyme_batch_to_tensor_pass),
-        ("convert-enzyme-to-memref", pass::create_enzyme_ops_to_mem_ref_pass),
+        (
+            "enzyme-simplify-math",
+            pass::create_mathematic_simplification_pass,
+        ),
+        (
+            "remove-unnecessary-enzyme-ops",
+            pass::create_remove_unused_enzyme_ops_pass,
+        ),
+        (
+            "flatten-enzyme-caches",
+            pass::create_flatten_enzyme_caches_pass,
+        ),
+        (
+            "simplify-memref-cache",
+            pass::create_simplify_memref_cache_pass,
+        ),
+        (
+            "enzyme-batch-to-tensor",
+            pass::create_enzyme_batch_to_tensor_pass,
+        ),
+        (
+            "convert-enzyme-to-memref",
+            pass::create_enzyme_ops_to_mem_ref_pass,
+        ),
         ("add-to-op-to-split", pass::create_add_to_op_to_split_pass),
         ("split-multi-results", pass::create_split_multi_results_pass),
-        ("inline-enzyme-regions", pass::create_inline_enzyme_into_region_pass),
-        ("outline-enzyme-regions", pass::create_outline_enzyme_from_region_pass),
-        ("hoist-enzyme-regions", pass::create_hoist_enzyme_from_region_pass),
-        ("sink-checkpoint-views", pass::create_sink_checkpoint_views_pass),
-        ("hoist-loop-allocations", pass::create_hoist_loop_allocations_pass),
-        ("lower-affine-atomic-rmw", pass::create_lower_affine_atomic_rmw_pass),
+        (
+            "inline-enzyme-regions",
+            pass::create_inline_enzyme_into_region_pass,
+        ),
+        (
+            "outline-enzyme-regions",
+            pass::create_outline_enzyme_from_region_pass,
+        ),
+        (
+            "hoist-enzyme-regions",
+            pass::create_hoist_enzyme_from_region_pass,
+        ),
+        (
+            "sink-checkpoint-views",
+            pass::create_sink_checkpoint_views_pass,
+        ),
+        (
+            "hoist-loop-allocations",
+            pass::create_hoist_loop_allocations_pass,
+        ),
+        (
+            "lower-affine-atomic-rmw",
+            pass::create_lower_affine_atomic_rmw_pass,
+        ),
         ("raise-llvm-ext", pass::create_raise_llvm_ext_pass),
         ("lower-llvm-ext", pass::create_lower_llvm_ext_pass),
     ];
@@ -37,7 +73,8 @@ fn every_pass_runs() {
         let pm = PassManager::new(&ctx);
         pm.add_pass(create());
         let mut module = Module::parse(&ctx, "module {}").unwrap();
-        pm.run(&mut module).unwrap_or_else(|e| panic!("{name} failed: {e}"));
+        pm.run(&mut module)
+            .unwrap_or_else(|e| panic!("{name} failed: {e}"));
     }
 }
 

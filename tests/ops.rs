@@ -86,7 +86,6 @@ fn activity_attributes_cover_all_variants() {
     );
 }
 
-
 fn symbol<'c>(ctx: &'c Context, name: &str) -> FlatSymbolRefAttribute<'c> {
     FlatSymbolRefAttribute::new(ctx, name)
 }
@@ -167,7 +166,14 @@ fn batch_op() {
     let ctx = create_context();
     let tensor_ty = Type::parse(&ctx, "tensor<4xf64>").unwrap();
     let module = with_caller(&ctx, SQUARE, &[tensor_ty], &[tensor_ty], |args| {
-        batch(&ctx, "square", args, &[tensor_ty], &[4], Location::unknown(&ctx))
+        batch(
+            &ctx,
+            "square",
+            args,
+            &[tensor_ty],
+            &[4],
+            Location::unknown(&ctx),
+        )
     });
     filecheck(&module.as_operation().to_string(), SQUARE, Some("BATCH"));
 }
@@ -179,7 +185,10 @@ fn autodiff_accessors() {
     let f64_ty = Type::float64(&ctx);
     let loc = Location::unknown(&ctx);
     let block = Block::new(&[f64_ty, f64_ty], &[loc, loc]).unwrap();
-    let args = [block.argument(0).unwrap().into(), block.argument(1).unwrap().into()];
+    let args = [
+        block.argument(0).unwrap().into(),
+        block.argument(1).unwrap().into(),
+    ];
     let op = autodiff_square(&ctx, &args, 2, true);
     let op = ods::AutoDiffOperation::try_from(op).expect("not an enzyme.autodiff");
     assert_eq!(op.r#fn().unwrap().value(), Ok("square"));
