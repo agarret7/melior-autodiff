@@ -79,8 +79,9 @@ in full, for its LLVM interface, where an `Active` argument is marked `enzyme_ou
 
 The [`examples/`](examples) are a good place to start; each JIT-runs a derivative and checks it.
 `activities` shows how each activity variant shapes a derivative's signature, `gradients` builds
-gradient programs from Rust, and `jvp` and `vjp` apply forward and reverse mode to arrays. Run one
-with `cargo run --example <name>`.
+gradient programs from Rust, `jvp` and `vjp` apply forward and reverse mode to arrays, and
+`expression` compiles a Rust expression tree to MLIR at runtime and differentiates it. Run one with
+`cargo run --example <name>`.
 
 ## What's here
 

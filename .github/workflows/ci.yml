@@ -74,4 +74,4 @@ jobs:
         run: cargo test --doc
 
       - name: Examples
-        run: for example in activities gradients jvp vjp; do cargo run --example "$example"; done
+        run: for example in activities gradients jvp vjp expression; do cargo run --example "$example"; done
