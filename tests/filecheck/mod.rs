@@ -37,6 +37,5 @@ pub fn filecheck(ir: &str, check_file: &str, prefix: Option<&str>) {
 }
 
 fn filecheck_binary() -> PathBuf {
-    let prefix = std::env::var("MLIR_SYS_230_PREFIX").unwrap_or_else(|_| "/usr/lib/llvm-23".into());
-    Path::new(&prefix).join("bin/FileCheck")
+    Path::new(env!("LLVM_PREFIX")).join("bin/FileCheck")
 }

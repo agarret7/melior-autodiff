@@ -1,110 +1,167 @@
-use std::path::PathBuf;
+use std::{
+    env,
+    path::{Path, PathBuf},
+    process::Command,
+};
+
+/// The Enzyme libraries this crate links, by their directory under `Enzyme/MLIR` in a build.
+const ENZYME_LIBS: &[(&str, &str)] = &[
+    ("Integrations/c", "MLIRCAPIEnzyme"),
+    ("Dialect", "MLIREnzyme"),
+    ("Dialect/Impulse", "MLIRImpulse"),
+    ("Dialect/LLVMExt", "MLIRLLVMExt"),
+    ("Interfaces", "MLIREnzymeAutoDiffInterface"),
+    ("Analysis", "MLIREnzymeAnalysis"),
+    ("Passes", "MLIREnzymeTransforms"),
+    ("Implementations", "MLIREnzymeImplementations"),
+];
+
+/// The CMake targets that build every library in `ENZYME_LIBS`.
+const ENZYME_TARGETS: &[&str] = &["MLIRCAPIEnzyme", "MLIRLLVMExt"];
 
 fn main() {
-    build_enzyme_bindings();
-}
-
-fn build_enzyme_bindings() {
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let enzyme_src = manifest.join("enzyme/enzyme/Enzyme/MLIR/Integrations/c");
+    let enzyme_src = manifest.join("enzyme/enzyme");
+    let llvm_prefix = llvm_prefix();
+    // The FileCheck tests run the FileCheck from this LLVM.
+    println!("cargo:rustc-env=LLVM_PREFIX={}", llvm_prefix.display());
 
     // `ods::enzyme` generates the dialect's ops from its TableGen definitions here.
-    let enzyme_dialect = manifest.join("enzyme/enzyme/Enzyme/MLIR/Dialect");
+    let enzyme_dialect = enzyme_src.join("Enzyme/MLIR/Dialect");
     println!("cargo:rustc-env=ENZYME_DIALECT_DIR={}", enzyme_dialect.display());
     for td in ["EnzymeOps.td", "Dialect.td", "EnzymeEnums.td"] {
         println!("cargo:rerun-if-changed={}", enzyme_dialect.join(td).display());
     }
 
-    // Allow overriding the build dir via env var; default to our submodule build.
-    let enzyme_build = std::env::var("ENZYME_BUILD_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| manifest.join("enzyme/build"));
+    // An existing Enzyme build, or else one of the submodule, built here.
+    println!("cargo:rerun-if-env-changed=ENZYME_BUILD_DIR");
+    let enzyme_build = match env::var_os("ENZYME_BUILD_DIR") {
+        Some(dir) => PathBuf::from(dir),
+        None => build_enzyme(&enzyme_src, &llvm_prefix),
+    };
 
-    let lib_dir = enzyme_build.join("Enzyme/MLIR/Integrations/c");
+    link(&enzyme_build, &llvm_prefix);
+    generate_bindings(&enzyme_src, &enzyme_build, &llvm_prefix);
+}
 
-    let llvm_prefix = std::env::var("MLIR_SYS_230_PREFIX")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("/usr/lib/llvm-23"));
+/// The LLVM install to build against: `MLIR_SYS_230_PREFIX`, or else the one whose `llvm-config`
+/// is on `PATH`, the same one `mlir-sys` links.
+fn llvm_prefix() -> PathBuf {
+    println!("cargo:rerun-if-env-changed=MLIR_SYS_230_PREFIX");
+    if let Some(prefix) = env::var_os("MLIR_SYS_230_PREFIX") {
+        return PathBuf::from(prefix);
+    }
+    let output = Command::new("llvm-config")
+        .arg("--prefix")
+        .output()
+        .unwrap_or_else(|error| {
+            panic!("set MLIR_SYS_230_PREFIX to your LLVM 23 install, or put its llvm-config on PATH: {error}")
+        });
+    if !output.status.success() {
+        panic!("llvm-config --prefix exited with {}", output.status);
+    }
+    PathBuf::from(String::from_utf8(output.stdout).unwrap().trim())
+}
 
-    println!("cargo:rustc-link-search=native={}", lib_dir.display());
-    // MLIRCAPIEnzyme depends on these MLIR/Enzyme libs.
-    println!(
-        "cargo:rustc-link-search=native={}",
-        enzyme_build.join("lib").display()
+/// Builds Enzyme's MLIR C API from `src` into `OUT_DIR`, against the LLVM at `llvm_prefix`, and
+/// returns the build directory.
+fn build_enzyme(src: &Path, llvm_prefix: &Path) -> PathBuf {
+    if !src.join("CMakeLists.txt").exists() {
+        panic!(
+            "Enzyme's sources are missing from {}: run `git submodule update --init`, or set \
+             ENZYME_BUILD_DIR to an existing Enzyme build",
+            src.display()
+        );
+    }
+    for path in ["CMakeLists.txt", "cmake", "include", "Enzyme", "tools"] {
+        println!("cargo:rerun-if-changed={}", src.join(path).display());
+    }
+    println!("cargo:rerun-if-env-changed=CC");
+    println!("cargo:rerun-if-env-changed=CXX");
+
+    let build = PathBuf::from(env::var("OUT_DIR").unwrap()).join("enzyme");
+    if !build.join("CMakeCache.txt").exists() {
+        let mut configure = Command::new("cmake");
+        configure
+            .arg("-S")
+            .arg(src)
+            .arg("-B")
+            .arg(&build)
+            .arg("-DCMAKE_BUILD_TYPE=Release")
+            .arg(format!("-DLLVM_DIR={}", llvm_prefix.join("lib/cmake/llvm").display()))
+            .arg(format!("-DMLIR_DIR={}", llvm_prefix.join("lib/cmake/mlir").display()))
+            .arg("-DENZYME_MLIR=ON")
+            .arg("-DENZYME_CLANG=OFF")
+            .arg("-DENZYME_BC_LOADER=OFF");
+        // Enzyme has to be compiled by a compiler that can build against this LLVM, so default to
+        // the clang installed with it.
+        for (var, name, clang) in [("CC", "C", "clang"), ("CXX", "CXX", "clang++")] {
+            let clang = llvm_prefix.join("bin").join(clang);
+            if env::var_os(var).is_none() && clang.exists() {
+                configure.arg(format!("-DCMAKE_{name}_COMPILER={}", clang.display()));
+            }
+        }
+        run(&mut configure, "configure Enzyme");
+    }
+
+    // Each job can take a couple of gigabytes, so use at most 4 unless ENZYME_BUILD_JOBS says
+    // otherwise, and fewer if Cargo runs fewer.
+    println!("cargo:rerun-if-env-changed=ENZYME_BUILD_JOBS");
+    let jobs = env::var("ENZYME_BUILD_JOBS").unwrap_or_else(|_| {
+        let cargo_jobs: usize = env::var("NUM_JOBS").ok().and_then(|n| n.parse().ok()).unwrap_or(1);
+        cargo_jobs.min(4).to_string()
+    });
+    run(
+        Command::new("cmake")
+            .arg("--build")
+            .arg(&build)
+            .arg("--target")
+            .args(ENZYME_TARGETS)
+            .args(["--parallel", &jobs]),
+        "build Enzyme",
     );
-    println!(
-        "cargo:rustc-link-search=native={}",
-        enzyme_build.join("Enzyme/MLIR/Dialect").display()
-    );
-    println!(
-        "cargo:rustc-link-search=native={}",
-        enzyme_build.join("Enzyme/MLIR/Dialect/Impulse").display()
-    );
-    println!(
-        "cargo:rustc-link-search=native={}",
-        enzyme_build.join("Enzyme/MLIR/Interfaces").display()
-    );
-    println!(
-        "cargo:rustc-link-search=native={}",
-        enzyme_build.join("Enzyme/MLIR/Analysis").display()
-    );
-    println!(
-        "cargo:rustc-link-search=native={}",
-        enzyme_build.join("Enzyme/MLIR/Passes").display()
-    );
-    println!(
-        "cargo:rustc-link-search=native={}",
-        enzyme_build.join("Enzyme/MLIR/Implementations").display()
-    );
-    println!(
-        "cargo:rustc-link-search=native={}",
-        enzyme_build.join("Enzyme/MLIR/Dialect/LLVMExt").display()
-    );
-    println!("cargo:rustc-link-lib=static=MLIRCAPIEnzyme");
-    println!("cargo:rustc-link-lib=static=MLIREnzyme");
-    println!("cargo:rustc-link-lib=static=MLIRImpulse");
-    println!("cargo:rustc-link-lib=static=MLIREnzymeAutoDiffInterface");
-    println!("cargo:rustc-link-lib=static=MLIREnzymeAnalysis");
-    println!("cargo:rustc-link-lib=static=MLIREnzymeTransforms");
-    println!("cargo:rustc-link-lib=static=MLIREnzymeImplementations");
-    println!("cargo:rustc-link-lib=static=MLIRLLVMExt");
-    println!(
-        "cargo:rustc-link-search=native={}",
-        llvm_prefix.join("lib").display()
-    );
+    build
+}
+
+fn run(command: &mut Command, what: &str) {
+    let status = command
+        .status()
+        .unwrap_or_else(|error| panic!("failed to {what}: couldn't run cmake: {error}"));
+    if !status.success() {
+        panic!("failed to {what}: {command:?} exited with {status}");
+    }
+}
+
+fn link(enzyme_build: &Path, llvm_prefix: &Path) {
+    let enzyme_mlir = enzyme_build.join("Enzyme/MLIR");
+    for (dir, lib) in ENZYME_LIBS {
+        println!("cargo:rustc-link-search=native={}", enzyme_mlir.join(dir).display());
+        println!("cargo:rustc-link-lib=static={lib}");
+        // Relink when a rebuilt library changes without a header change.
+        println!(
+            "cargo:rerun-if-changed={}",
+            enzyme_mlir.join(dir).join(format!("lib{lib}.a")).display()
+        );
+    }
+    println!("cargo:rustc-link-search=native={}", llvm_prefix.join("lib").display());
     println!("cargo:rustc-link-lib=MLIRCAPIIR");
-    println!("cargo:rustc-link-lib=stdc++");
+}
 
+fn generate_bindings(enzyme_src: &Path, enzyme_build: &Path, llvm_prefix: &Path) {
+    let capi = enzyme_src.join("Enzyme/MLIR/Integrations/c");
     for header in [
-        enzyme_src.join("EnzymeMLIR.h"),
-        enzyme_src.join("EnzymeMLIRPasses.h"),
+        capi.join("EnzymeMLIR.h"),
+        capi.join("EnzymeMLIRPasses.h"),
         enzyme_build.join("Enzyme/MLIR/Passes/Passes.capi.h.inc"),
     ] {
         println!("cargo:rerun-if-changed={}", header.display());
     }
-    // Pointing at another Enzyme build must relink even when neither build's libraries changed.
-    println!("cargo:rerun-if-env-changed=ENZYME_BUILD_DIR");
-    // Relink when a rebuilt Enzyme library changes without a header change.
-    for lib in [
-        "Integrations/c/libMLIRCAPIEnzyme.a",
-        "Dialect/libMLIREnzyme.a",
-        "Dialect/Impulse/libMLIRImpulse.a",
-        "Interfaces/libMLIREnzymeAutoDiffInterface.a",
-        "Analysis/libMLIREnzymeAnalysis.a",
-        "Passes/libMLIREnzymeTransforms.a",
-        "Implementations/libMLIREnzymeImplementations.a",
-    ] {
-        println!(
-            "cargo:rerun-if-changed={}",
-            enzyme_build.join("Enzyme/MLIR").join(lib).display()
-        );
-    }
 
     let bindings = bindgen::Builder::default()
-        .header(enzyme_src.join("EnzymeMLIR.h").to_str().unwrap())
+        .header(capi.join("EnzymeMLIR.h").to_str().unwrap())
         // The pass constructors Enzyme generates from Passes.td, declared in an included `.inc`
         // under the build directory.
-        .header(enzyme_src.join("EnzymeMLIRPasses.h").to_str().unwrap())
+        .header(capi.join("EnzymeMLIRPasses.h").to_str().unwrap())
         .clang_arg(format!("-I{}", llvm_prefix.join("include").display()))
         .clang_arg(format!("-I{}", enzyme_build.join("Enzyme/MLIR").display()))
         .clang_arg(format!(
@@ -120,7 +177,7 @@ fn build_enzyme_bindings() {
         .generate()
         .expect("bindgen failed on EnzymeMLIR.h");
 
-    let out = PathBuf::from(std::env::var("OUT_DIR").unwrap());
+    let out = PathBuf::from(env::var("OUT_DIR").unwrap());
     bindings
         .write_to_file(out.join("enzyme_bindings.rs"))
         .unwrap();

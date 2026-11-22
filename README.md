@@ -93,31 +93,20 @@ with `cargo run --example <name>`.
 
 ## Build
 
-Requires LLVM/MLIR 23, the Enzyme submodule built with its MLIR plugin, and Rust from
-[rustup](https://rustup.rs), which picks up the toolchain pinned in `rust-toolchain.toml`.
+Requires LLVM/MLIR 23, CMake, and Rust from [rustup](https://rustup.rs), which picks up the
+toolchain pinned in `rust-toolchain.toml`.
 
-The submodule tracks Enzyme's upstream `main` plus one small commit (the `llvm23` branch) that keeps
-it building against LLVM 23. Upstream targets LLVM 24, and this crate will follow once `mlir-sys` supports LLVM 24.
+Enzyme is a submodule, and the build script builds the part this crate needs, Enzyme's MLIR C API,
+against your LLVM 23 the first time you build (a few minutes). The submodule tracks Enzyme's upstream
+`main` plus one small commit (the `llvm23` branch) that keeps it building against LLVM 23. Upstream
+targets LLVM 24, and this crate will follow once `mlir-sys` supports LLVM 24.
 
 ```sh
 git clone --recurse-submodules https://github.com/agarret7/melior-autodiff
 cd melior-autodiff
-
-# Build Enzyme's MLIR C API against your LLVM 23 install
-cmake -S enzyme/enzyme -B enzyme/build \
-  -DLLVM_DIR=$(llvm-config --cmakedir) \
-  -DENZYME_MLIR=ON \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
-cmake --build enzyme/build --target MLIRCAPIEnzyme MLIRLLVMExt --parallel 4
 ```
 
-Only Enzyme's MLIR C API (`MLIRCAPIEnzyme`, which builds most of the libraries this crate links) and
-its LLVM-extension dialect (`MLIRLLVMExt`) are needed, not all of Enzyme. Each compile job can take a
-couple of gigabytes, so keep `--parallel` low on machines with less than about 32 GB. Use the clang
-from the same LLVM install (for example `clang-23`) if `clang` isn't it.
-
-Then point the build at LLVM 23, in `.cargo/config.toml`:
+Point the build at LLVM 23, in `.cargo/config.toml`:
 
 ```toml
 [env]
@@ -127,8 +116,21 @@ LIBCLANG_PATH = "/usr/lib/llvm-23/lib"
 ```
 
 `MLIR_SYS_230_PREFIX` and `TABLEGEN_230_PREFIX` are where LLVM 23 is installed (`llvm-config
---prefix`), and `LIBCLANG_PATH` is where bindgen finds its `libclang`. `ENZYME_BUILD_DIR` overrides the
-default `enzyme/build` path. Then `cargo test`, and `cargo bench` for the benchmarks.
+--prefix`), and `LIBCLANG_PATH` is where bindgen finds its `libclang`. Then `cargo test`, and `cargo
+bench` for the benchmarks.
+
+Enzyme is compiled with the clang in `MLIR_SYS_230_PREFIX` unless `CC` and `CXX` say otherwise. Each
+compile job can take a couple of gigabytes, so the build runs at most 4 (fewer if Cargo runs fewer);
+set `ENZYME_BUILD_JOBS` to change that.
+
+To use an Enzyme you build yourself instead, for example to work on Enzyme, set `ENZYME_BUILD_DIR`
+to its build directory. It needs only the `MLIRCAPIEnzyme` and `MLIRLLVMExt` targets:
+
+```sh
+cmake -S enzyme/enzyme -B enzyme/build -DLLVM_DIR=$(llvm-config --cmakedir) -DENZYME_MLIR=ON \
+  -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
+cmake --build enzyme/build --target MLIRCAPIEnzyme MLIRLLVMExt --parallel 4
+```
 
 ## Benchmarks
 
