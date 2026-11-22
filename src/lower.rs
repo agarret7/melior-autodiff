@@ -18,8 +18,8 @@ use melior::{
         Location, Operation, OperationRef, Region, Type, TypeLike, ValueLike,
     },
     pass::{create_external, ExternalPass, Pass},
-    apply_patterns_and_fold_greedily_with_op, create_op_rewrite_pattern, Error,
-    GreedyRewriteDriverConfig, PatternRewriter, RewritePatternSet,
+    apply_patterns_and_fold_greedily_with_op, Error, GreedyRewriteDriverConfig, PatternRewriter,
+    RewritePattern, RewritePatternSet,
 };
 
 #[repr(align(8))]
@@ -68,7 +68,7 @@ fn pattern_pass(
             // below.
             let reasons = Rc::new(RefCell::new(HashMap::new()));
             let recorded = reasons.clone();
-            let pattern = create_op_rewrite_pattern(
+            let pattern = RewritePattern::new(
                 op_name,
                 1,
                 ctx,
@@ -82,7 +82,8 @@ fn pattern_pass(
                     result.is_ok()
                 },
                 generated_names,
-            );
+            )
+            .expect("a benefit of 1 is valid");
             let patterns = RewritePatternSet::new(ctx);
             patterns.add(pattern);
             // The pass manager hands this pass `op` to transform, so borrowing it mutably for the
