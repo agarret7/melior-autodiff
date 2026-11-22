@@ -104,6 +104,12 @@ sudo apt-get install libmlir-23-dev mlir-23-tools libclang-23-dev libpolly-23-de
   zlib1g-dev libzstd-dev libxml2-dev libz3-dev cmake
 ```
 
+Or from Homebrew, as melior's README suggests:
+
+```sh
+brew install llvm@23 cmake
+```
+
 Enzyme is a submodule, and the build script builds the part this crate needs, Enzyme's MLIR C API,
 against your LLVM 23 the first time you build (a few minutes). The submodule tracks Enzyme's upstream
 `main` plus one small commit (the `llvm23` branch) that keeps it building against LLVM 23. Upstream
@@ -114,7 +120,9 @@ git clone --recurse-submodules https://github.com/agarret7/melior-autodiff
 cd melior-autodiff
 ```
 
-Point the build at LLVM 23, in `.cargo/config.toml`:
+Point the build at LLVM 23, in `.cargo/config.toml`. `MLIR_SYS_230_PREFIX` and
+`TABLEGEN_230_PREFIX` are where LLVM 23 is installed (`llvm-config --prefix`), and `LIBCLANG_PATH`
+is where bindgen finds its `libclang`. For apt.llvm.org:
 
 ```toml
 [env]
@@ -123,9 +131,20 @@ TABLEGEN_230_PREFIX = "/usr/lib/llvm-23"
 LIBCLANG_PATH = "/usr/lib/llvm-23/lib"
 ```
 
-`MLIR_SYS_230_PREFIX` and `TABLEGEN_230_PREFIX` are where LLVM 23 is installed (`llvm-config
---prefix`), and `LIBCLANG_PATH` is where bindgen finds its `libclang`. Then `cargo test`, and `cargo
-bench` for the benchmarks.
+For Homebrew, the prefix is `brew --prefix llvm@23`, and `CMAKE_PREFIX_PATH`, set to
+`brew --prefix`, lets CMake find the libraries Homebrew's LLVM links, such as zstd. On Linux:
+
+```toml
+[env]
+MLIR_SYS_230_PREFIX = "/home/linuxbrew/.linuxbrew/opt/llvm"
+TABLEGEN_230_PREFIX = "/home/linuxbrew/.linuxbrew/opt/llvm"
+LIBCLANG_PATH = "/home/linuxbrew/.linuxbrew/opt/llvm/lib"
+CMAKE_PREFIX_PATH = "/home/linuxbrew/.linuxbrew"
+```
+
+On macOS the paths start with `/opt/homebrew` on Apple silicon, or `/usr/local` on Intel.
+
+Then `cargo test`, and `cargo bench` for the benchmarks.
 
 Enzyme is compiled with the clang in `MLIR_SYS_230_PREFIX` unless `CC` and `CXX` say otherwise. Each
 compile job can take a couple of gigabytes, so the build runs at most 4 (fewer if Cargo runs fewer);
