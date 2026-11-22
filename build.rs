@@ -48,6 +48,24 @@ fn main() {
 
     link(&enzyme_build, &llvm_prefix);
     generate_bindings(&enzyme_src, &enzyme_build, &llvm_prefix);
+    list_pass_constructors(&enzyme_build);
+}
+
+/// Passes the tests every pass constructor Enzyme generates, as `ENZYME_PASS_CONSTRUCTORS`, so they
+/// can check that each one is wrapped.
+fn list_pass_constructors(enzyme_build: &Path) {
+    let header = enzyme_build.join("Enzyme/MLIR/Passes/Passes.capi.h.inc");
+    let header = std::fs::read_to_string(&header)
+        .unwrap_or_else(|error| panic!("couldn't read {}: {error}", header.display()));
+    let constructors: Vec<&str> = header
+        .split_whitespace()
+        .filter_map(|word| word.strip_suffix("(void);"))
+        .filter(|name| name.starts_with("mlirCreateEnzyme"))
+        .collect();
+    println!(
+        "cargo:rustc-env=ENZYME_PASS_CONSTRUCTORS={}",
+        constructors.join(",")
+    );
 }
 
 /// The LLVM install to build against: `MLIR_SYS_230_PREFIX`, or else the one whose `llvm-config`

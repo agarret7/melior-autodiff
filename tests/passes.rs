@@ -71,6 +71,10 @@ fn every_pass_runs() {
         ("raise-llvm-ext", pass::create_raise_llvm_ext_pass),
         ("lower-llvm-ext", pass::create_lower_llvm_ext_pass),
         (
+            "lower-enzyme-binomial-progress",
+            pass::create_lower_binomial_progress_pass,
+        ),
+        (
             "print-activity-analysis",
             pass::create_print_activity_analysis_pass,
         ),
@@ -92,6 +96,45 @@ fn enzyme_lowering_runs() {
     pass::add_enzyme_lowering(&pm);
     let mut module = Module::parse(&ctx, "module {}").unwrap();
     pm.run(&mut module).unwrap();
+}
+
+// Every pass constructor Enzyme generates is wrapped in `pass` or skipped here with a reason, so a
+// pass Enzyme adds upstream fails this test until it's one or the other.
+#[test]
+fn every_generated_pass_is_wrapped() {
+    let skipped = [
+        // Added as text, with its options, by `add_differentiate_wrapper_pass`.
+        "mlirCreateEnzymeDifferentiateWrapperPass",
+        // Deprecated in favor of `add-to-op-to-split`.
+        "mlirCreateEnzymeAddToOpToIndexAndLoadPass",
+        // Enzyme's test-only passes.
+        "mlirCreateEnzymePrintAliasAnalysisPass",
+        "mlirCreateEnzymePrintBaseObjectPass",
+        // Lowers Enzyme's Impulse dialect, which this crate doesn't wrap yet.
+        "mlirCreateEnzymeExpandImpulsePass",
+    ];
+    let generated: Vec<&str> = env!("ENZYME_PASS_CONSTRUCTORS")
+        .split(',')
+        .filter(|name| !name.is_empty())
+        .collect();
+    let wrapped: Vec<&str> = include_str!("../src/pass.rs")
+        .split(|c: char| !c.is_alphanumeric() && c != '_')
+        .filter(|word| word.starts_with("mlirCreateEnzyme"))
+        .collect();
+
+    let missing: Vec<_> = generated
+        .iter()
+        .filter(|name| !wrapped.contains(name) && !skipped.contains(name))
+        .collect();
+    assert!(missing.is_empty(), "not wrapped in `pass`: {missing:?}");
+    let stale: Vec<_> = skipped
+        .iter()
+        .filter(|name| !generated.contains(name))
+        .collect();
+    assert!(
+        stale.is_empty(),
+        "skipped, but Enzyme no longer generates: {stale:?}"
+    );
 }
 
 // With `annotate`, the analysis is kept on the IR. In f(x) = x + 2 * 2, the constant and the
