@@ -197,10 +197,16 @@ enzyme_pass!(
     mlirCreateEnzymeHoistLoopAllocationsPass
 );
 enzyme_pass!(
-    /// `lower-affine-atomic-rmw`: lowers Enzyme's affine atomic read-modify-write ops to memref
-    /// ones.
+    /// `lower-affine-atomic-rmw`: replaces `enzyme.affine_atomic_rmw` with `enzyme.atomic_rmw`,
+    /// which indexes its memref directly. Nothing in Enzyme lowers `enzyme.atomic_rmw` further.
     create_lower_affine_atomic_rmw_pass,
     mlirCreateEnzymeLowerAffineAtomicRmwPass
+);
+enzyme_pass!(
+    /// `lower-enzyme-binomial-progress`: lowers `enzyme.binomial_progress`, which Enzyme emits for
+    /// loops with binomial checkpointing, to `scf` and `arith`.
+    create_lower_binomial_progress_pass,
+    mlirCreateEnzymeLowerBinomialProgressPass
 );
 enzyme_pass!(
     /// `raise-llvm-ext`: raises LLVM dialect operations to Enzyme's LLVM Ext dialect.
@@ -249,31 +255,34 @@ pub fn create_differentiate_pass_with_options(postpasses: &str, verify_post_pass
     }
 }
 
-/// Adds the passes that replace every Enzyme op in a module with upstream MLIR:
+/// Adds the passes that lower Enzyme's ops in a module to upstream MLIR, including `linalg`: they
+/// generate the derivatives, replace Enzyme's loop caches with buffers sized up front where they
+/// can, and lower the remaining Enzyme ops.
 ///
-/// 1. Generates the derivatives: replaces `enzyme.batch`, `enzyme.autodiff` and `enzyme.fwddiff`
-///    with calls to the functions Enzyme generates, which are left as private functions.
-/// 2. Optimizes them: where it can, replaces Enzyme's per-iteration loop caches with buffers sized
-///    up front, then lowers those buffers' accesses to memref loads and stores.
-/// 3. Lowers what's left: `enzyme.concat` and `enzyme.extract` to tensors, `enzyme.broadcast`
-///    with this crate's stopgap pass, and the rest, including `enzyme.fill_zero` and Enzyme's
-///    gradient and cache ops, to memrefs.
+/// Not every module with valid Enzyme ops lowers. `enzyme.jacobian` is unsupported, and so is
+/// reverse mode through parallel loops (`scf.parallel`, `affine.parallel`), whose derivatives
+/// accumulate with `enzyme.atomic_rmw`, which Enzyme has no lowering for. A module that needs
+/// either fails to lower with these passes.
 ///
-/// Afterwards the module uses only upstream dialects, including `linalg`.
+/// The passes this adds can change between releases of this crate or of Enzyme. For a pipeline
+/// that stays fixed, add the passes yourself with the `create_*_pass` functions.
 ///
 /// For `enzyme-wrap`, add [`add_differentiate_wrapper_pass`] to `manager` first.
 pub fn add_enzyme_lowering(manager: &PassManager) {
-    // 1.
+    // Outlining turns the region ops into `enzyme.autodiff` and `enzyme.fwddiff`, which the passes
+    // after it differentiate.
+    manager.add_pass(create_outline_enzyme_from_region_pass());
     manager.add_pass(create_batch_pass());
     manager.add_pass(create_differentiate_pass());
-    // 2. `remove-unnecessary-enzyme-ops` writes the buffers with `enzyme.store` and reads them with
-    //    `enzyme.load`, which only `flatten-enzyme-caches` lowers.
+    // `remove-unnecessary-enzyme-ops` writes the buffers with `enzyme.store` and reads them with
+    // `enzyme.load`, which only `flatten-enzyme-caches` lowers.
     manager.add_pass(create_remove_unused_enzyme_ops_pass());
     manager.add_pass(create_flatten_enzyme_caches_pass());
-    // 3. Enzyme has no lowering for `enzyme.broadcast` (EnzymeAD/Enzyme#3884), and
-    //    `convert-enzyme-to-memref` fails on any Enzyme op it can't convert, so this crate's pass
-    //    lowers it first.
+    manager.add_pass(create_lower_binomial_progress_pass());
     manager.add_pass(create_enzyme_batch_to_tensor_pass());
+    // Enzyme has no lowering for `enzyme.broadcast` (EnzymeAD/Enzyme#3884), and
+    // `convert-enzyme-to-memref` fails on any Enzyme op it can't convert, so this crate's pass
+    // lowers it first.
     manager.add_pass(create_lower_broadcast_pass());
     manager.add_pass(create_enzyme_ops_to_mem_ref_pass());
 }
