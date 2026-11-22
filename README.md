@@ -138,16 +138,3 @@ cmake -S enzyme/enzyme -B enzyme/build -DLLVM_DIR=$(llvm-config --cmakedir) -DEN
   -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
 cmake --build enzyme/build --target MLIRCAPIEnzyme MLIRLLVMExt --parallel 4
 ```
-
-## Benchmarks
-
-```text
-compile/square          ~5.8 ms   (parse → differentiate → lower → JIT compile)
-compile/poly_x8         ~8.8 ms
-execute/dsquare         ~775 ns   (invoke_packed)
-execute_raw/dsquare     ~2 ns     (raw fn ptr via engine.lookup)
-```
-
-`invoke_packed` looks the function up by name and calls it through its `void(**)(void**)` wrapper on
-every call. For an inner loop, look the function up once with `engine.lookup` and call the pointer
-directly, transmuted to its exact C signature.
