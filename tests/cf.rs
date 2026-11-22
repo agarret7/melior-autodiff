@@ -1,10 +1,7 @@
 // Differentiating unstructured control flow: `cf.br` and `cf.cond_br` between blocks, the form
 // `scf` takes after `convert-scf-to-cf`, or that a frontend emitting a CFG produces directly.
 //
-// Reverse mode is ignored for now: Enzyme's reverse pass routes each block argument's adjoint to a
-// predecessor by comparing against the argument's number instead of the predecessor's index (a
-// shadowed `idx` in `EnzymeLogicReverse.cpp`), so every predecessor but the first gets a zero
-// gradient. The two tests pass with the fix.
+// Reverse mode is ignored for now.
 
 mod common;
 use common::{approx, compile, lookup};
@@ -67,7 +64,8 @@ fn fwddiff_through_a_loop() {
 }
 
 #[test]
-#[ignore = "Enzyme routes block-argument adjoints by argument number, not predecessor"]
+#[ignore = "Enzyme routes block-argument adjoints by argument number, not predecessor, and loops \
+            fail for another reason too"]
 fn autodiff_through_a_loop() {
     let engine = compile(POWER);
     let rev: extern "C" fn(f64, i64, f64) -> f64 = unsafe { lookup(&engine, "rev_power") };
