@@ -7,6 +7,11 @@ version = "0.0.1"
 edition = "2021"
 description = "Automatic differentiation as a Melior pass"
 license = "Apache-2.0"
+repository = "https://github.com/agarret7/melior-autodiff"
+readme = "README.md"
+keywords = ["mlir", "autodiff", "enzyme", "compiler", "melior"]
+categories = ["api-bindings", "compilers", "mathematics"]
+rust-version = "1.98"
 # Enzyme's static libraries may be linked only once per build.
 links = "MLIRCAPIEnzyme"
 
