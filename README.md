@@ -94,7 +94,14 @@ with `cargo run --example <name>`.
 ## Build
 
 Requires LLVM/MLIR 23, CMake, and Rust from [rustup](https://rustup.rs), which picks up the
-toolchain pinned in `rust-toolchain.toml`.
+toolchain pinned in `rust-toolchain.toml`. On Debian or Ubuntu, LLVM and MLIR 23 come from
+[apt.llvm.org](https://apt.llvm.org), along with the libraries the static LLVM build links:
+
+```sh
+wget https://apt.llvm.org/llvm.sh && sudo bash llvm.sh 23
+sudo apt-get install libmlir-23-dev mlir-23-tools libclang-23-dev libpolly-23-dev \
+  zlib1g-dev libzstd-dev libxml2-dev libz3-dev cmake
+```
 
 Enzyme is a submodule, and the build script builds the part this crate needs, Enzyme's MLIR C API,
 against your LLVM 23 the first time you build (a few minutes). The submodule tracks Enzyme's upstream
