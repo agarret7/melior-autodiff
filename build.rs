@@ -20,7 +20,7 @@ const ENZYME_LIBS: &[(&str, &str)] = &[
 const ENZYME_TARGETS: &[&str] = &["MLIRCAPIEnzyme", "MLIRLLVMExt"];
 
 fn main() {
-    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let manifest = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
     let enzyme_src = manifest.join("enzyme/enzyme");
     let llvm_prefix = llvm_prefix();
     // The FileCheck tests run the FileCheck from this LLVM.
