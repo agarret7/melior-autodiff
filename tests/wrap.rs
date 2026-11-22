@@ -1,9 +1,9 @@
-use melior::ir::Module;
-use melior::pass::transform::create_canonicalizer_pass;
-use melior::pass::PassManager;
 use melior::Error;
+use melior::ir::Module;
+use melior::pass::PassManager;
+use melior::pass::transform::create_canonicalizer_pass;
 use melior_autodiff::pass::{self, DerivativeMode};
-use melior_autodiff::{utility::create_context, Activity};
+use melior_autodiff::{Activity, utility::create_context};
 
 mod filecheck;
 use filecheck::filecheck;

@@ -14,11 +14,7 @@ use common::{approx, compile, lookup};
 const PIECEWISE: &str = include_str!("mlir/cf/piecewise.mlir");
 
 fn piecewise_derivative(x: f64) -> f64 {
-    if x > 0.0 {
-        2.0 * x
-    } else {
-        -1.0
-    }
+    if x > 0.0 { 2.0 * x } else { -1.0 }
 }
 
 #[test]

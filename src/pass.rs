@@ -3,12 +3,12 @@
 use std::ffi::c_void;
 
 use melior::{
-    pass::{Pass, PassManager},
     Error, StringRef,
+    pass::{Pass, PassManager},
 };
-use mlir_sys::{mlirOpPassManagerAddPipeline, MlirStringRef};
+use mlir_sys::{MlirStringRef, mlirOpPassManagerAddPipeline};
 
-use crate::{sys, utility::register_passes, Activity};
+use crate::{Activity, sys, utility::register_passes};
 
 use crate::lower::create_lower_broadcast_pass;
 
@@ -230,8 +230,12 @@ fn activity_list(activities: &[Activity]) -> Result<String, Error> {
 }
 
 unsafe extern "C" fn append_message(text: MlirStringRef, data: *mut c_void) {
-    let text = std::slice::from_raw_parts(text.data as *const u8, text.length);
-    (*(data as *mut String)).push_str(&String::from_utf8_lossy(text));
+    // SAFETY: MLIR passes a valid string, and `data` is the `String` that
+    // `add_differentiate_wrapper_pass` hands it.
+    unsafe {
+        let text = std::slice::from_raw_parts(text.data as *const u8, text.length);
+        (*(data as *mut String)).push_str(&String::from_utf8_lossy(text));
+    }
 }
 
 /// `enzyme`, running the textual pass pipeline `postpasses` on every derivative function it

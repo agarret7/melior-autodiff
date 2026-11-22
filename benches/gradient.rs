@@ -1,8 +1,8 @@
 use std::hint::black_box;
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use melior::pass::PassManager;
-use melior::{ir::Module, ExecutionEngine};
+use melior::{ExecutionEngine, ir::Module};
 use melior_autodiff::utility::create_context;
 
 #[path = "../tests/common/mod.rs"]

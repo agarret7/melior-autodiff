@@ -14,12 +14,12 @@ mod common;
 use melior::{
     dialect::ods::bufferization::{MaterializeInDestinationOperation, ToTensorOperation},
     ir::{
-        r#type::{MemRefType, RankedTensorType},
         Attribute, BlockLike, Location, Module, Type, Value,
+        r#type::{MemRefType, RankedTensorType},
     },
     pass::PassManager,
 };
-use melior_autodiff::{fwddiff, pass, utility::create_context, Activity};
+use melior_autodiff::{Activity, fwddiff, pass, utility::create_context};
 
 const SOURCE: &str = r#"
 module {

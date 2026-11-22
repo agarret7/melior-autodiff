@@ -2,10 +2,10 @@
 #![allow(dead_code)]
 
 use melior::{
-    ir::Module,
-    pass::{bufferization, conversion, linalg, memref, transform, PassManager},
-    utility::{parse_pass_pipeline, register_all_passes},
     ExecutionEngine,
+    ir::Module,
+    pass::{PassManager, bufferization, conversion, linalg, memref, transform},
+    utility::{parse_pass_pipeline, register_all_passes},
 };
 use melior_autodiff::{pass, utility::create_context};
 

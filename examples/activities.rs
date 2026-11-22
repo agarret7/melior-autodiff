@@ -18,9 +18,9 @@ mod common;
 
 use melior::{ir::Module, pass::PassManager};
 use melior_autodiff::{
+    Activity,
     pass::{self, DerivativeMode},
     utility::create_context,
-    Activity,
 };
 
 const SOURCE: &str = r#"

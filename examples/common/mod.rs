@@ -4,15 +4,15 @@
 #![allow(dead_code)]
 
 use melior::{
+    Context, ExecutionEngine,
     dialect::func,
     ir::{
+        Block, BlockLike, Location, Module, Region, RegionLike, Type,
         attribute::{StringAttribute, TypeAttribute},
         r#type::FunctionType,
-        Block, BlockLike, Location, Module, Region, RegionLike, Type,
     },
     pass::PassManager,
     utility::{parse_pass_pipeline, register_all_passes},
-    Context, ExecutionEngine,
 };
 
 /// Lowers `module`, already free of Enzyme ops (see `pass::add_enzyme_lowering`), to the LLVM

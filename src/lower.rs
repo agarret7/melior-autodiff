@@ -6,20 +6,19 @@
 use std::{cell::RefCell, collections::HashMap, ffi::CString, rc::Rc};
 
 use melior::{
+    Error, GreedyRewriteDriverConfig, PatternRewriter, RewritePattern, RewritePatternSet,
     apply_patterns_and_fold_greedily_with_op,
     dialect::{
-        arith,
+        DialectHandle, arith,
         ods::{linalg, tensor},
-        DialectHandle,
     },
     ir::{
+        Location, Operation, OperationRef, Region, Type, TypeLike, ValueLike,
         attribute::{DenseI64ArrayAttribute, IntegerAttribute},
         operation::{OperationLike, WalkOrder, WalkResult},
         r#type::{RankedTensorType, ShapedTypeLike, TypeId},
-        Location, Operation, OperationRef, Region, Type, TypeLike, ValueLike,
     },
-    pass::{create_external, ExternalPass, Pass},
-    Error, GreedyRewriteDriverConfig, PatternRewriter, RewritePattern, RewritePatternSet,
+    pass::{ExternalPass, Pass, create_external},
 };
 
 #[repr(align(8))]

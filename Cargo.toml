@@ -4,7 +4,7 @@ resolver = "3"
 [package]
 name = "melior-autodiff"
 version = "0.0.1"
-edition = "2021"
+edition = "2024"
 description = "Automatic differentiation as a Melior pass"
 license = "Apache-2.0"
 repository = "https://github.com/agarret7/melior-autodiff"

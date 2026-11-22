@@ -6,16 +6,16 @@
 //! should use from Rust.
 
 use melior::{
+    Context,
     dialect::DialectHandle,
     ir::{
+        Attribute, Location, Operation, Type, Value,
         attribute::{
             ArrayAttribute, BoolAttribute, DenseI64ArrayAttribute, FlatSymbolRefAttribute,
             IntegerAttribute,
         },
         r#type::IntegerType,
-        Attribute, Location, Operation, Type, Value,
     },
-    Context,
 };
 
 // Runs the README's examples as doctests, so they keep compiling.

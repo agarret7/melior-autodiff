@@ -1,15 +1,15 @@
+use melior::Context;
 use melior::dialect::func;
 use melior::ir::{
+    Block, BlockLike, Location, Module, Operation, Region, RegionLike, Type, Value,
     attribute::{FlatSymbolRefAttribute, StringAttribute, TypeAttribute},
     operation::OperationLike,
     r#type::FunctionType,
-    Block, BlockLike, Location, Module, Operation, Region, RegionLike, Type, Value,
 };
 use melior::pass::PassManager;
-use melior::Context;
 use melior_autodiff::{
-    activity_array_attribute, autodiff, batch, fwddiff, ods, pass, utility::create_context,
-    Activity,
+    Activity, activity_array_attribute, autodiff, batch, fwddiff, ods, pass,
+    utility::create_context,
 };
 
 mod filecheck;

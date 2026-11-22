@@ -1,6 +1,6 @@
 //! Registration and setup, like `melior::utility`.
 
-use melior::{dialect::DialectRegistry, utility::register_all_dialects, Context};
+use melior::{Context, dialect::DialectRegistry, utility::register_all_dialects};
 
 use crate::{dialect_handle, sys};
 

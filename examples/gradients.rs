@@ -10,15 +10,15 @@
 mod common;
 
 use melior::{
+    Context,
     dialect::{arith, memref},
     ir::{
-        attribute::FloatAttribute, r#type::MemRefType, Block, BlockLike, Location, Module, Type,
-        Value,
+        Block, BlockLike, Location, Module, Type, Value, attribute::FloatAttribute,
+        r#type::MemRefType,
     },
     pass::PassManager,
-    Context,
 };
-use melior_autodiff::{autodiff, pass, utility::create_context, Activity};
+use melior_autodiff::{Activity, autodiff, pass, utility::create_context};
 
 const SOURCE: &str = r#"
 module {
